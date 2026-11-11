@@ -25,18 +25,22 @@ def builder_menu_keyboard(i18n: TranslatorRunner):
     builder = InlineKeyboardBuilder()
 
     builder.button(
-        text=i18n.get('menu_circuit_button'), 
-        callback_data='circuits',
-    )
-    builder.button(
         text=i18n.get('menu_profile_button'), 
         callback_data='profile', 
     )
     builder.button(
+        text=i18n.get('menu_circuit_button'), 
+        callback_data='circuits',
+    ) 
+    builder.button(
         text=i18n.get('menu_settings_button'), 
         callback_data='settings', 
     )
-    builder.adjust(2, 1)
+    builder.button(
+        text=i18n.get('menu_template_button'), 
+        callback_data='templates',
+    ) 
+    builder.adjust(2)
 
     return builder.as_markup()
 

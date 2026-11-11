@@ -2,6 +2,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from ..models.models import User, Role, UserSetting, Language, ComplexityLevel, Backend
 
@@ -130,4 +131,9 @@ class BaseRepository:
 
         logging.info('Get all Users')
         return rows
+
+    async def get_all_users_with_settings(self, session: AsyncSession):
+        query = select(User).options(selectinload(User.setting))
+        result = await session.execute(query)
+        return result.scalars().all()
 

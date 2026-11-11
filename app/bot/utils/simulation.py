@@ -1,10 +1,18 @@
+import logging
+import re
 import time
 from typing import Optional, Dict, Any, Tuple, List
 import numpy as np
 
 from ariquantum import QuantumRegister
 from qiskit import QuantumCircuit as QiskitCircuit, transpile
+from qiskit.quantum_info import Statevector
 from qiskit_aer import AerSimulator
+
+
+logger = logging.getLogger(__name__)
+
+_ANGLE_RE = re.compile(r'^(\d*)π(?:/(\d+))?$')
 
 
 def group_consecutive_measurements(history: list) -> list:
@@ -44,198 +52,114 @@ def group_consecutive_measurements(history: list) -> list:
     return grouped
 
 
+def parse_angle(params: str) -> float:
+    """Разбирает угол: число (радианы) или запись вида π, π/2, 3π/4, 2π."""
+    params = params.strip()
+    match = _ANGLE_RE.match(params)
+    if match:
+        numerator = int(match.group(1)) if match.group(1) else 1
+        denominator = int(match.group(2)) if match.group(2) else 1
+        return numerator * np.pi / denominator
+    return float(params)
+
+
+def split_gate_name(gate_name: str) -> Tuple[str, float]:
+    """Разделяет 'Rx(π/2)' на ('Rx', π/2). Для гейтов без параметра угол = 1."""
+    if '(' not in gate_name:
+        return gate_name, 1
+    base_name, params = gate_name.split('(', 1)
+    params = params.rstrip(')')
+    if not params:
+        raise ValueError(f'Gate {gate_name!r} has an empty angle')
+    return base_name, parse_angle(params)
+
+
 def apply_gate_to_ariquantum(qr: QuantumRegister, op: list) -> None:
     """Применяет операцию к AriQuantum регистру"""
     gate_name, controls, targets = op
     target = targets[0] if targets else None
+    base_name, angle = split_gate_name(gate_name)
+    n_ctrl = len(controls)
 
-
-    # Обработка параметрических гейтов
-    if '(' in gate_name:
-        base_name, params = gate_name.split('(', 1)
-        params = params.rstrip(')')
-        if params:
-            # Обработка углов вроде π/2, π/4
-            if params == 'π/6':
-                angle = np.pi / 6
-            elif params == 'π/4':
-                angle = np.pi / 4
-            elif params == 'π/3':
-                angle = np.pi / 3
-            elif params == 'π/2':
-                angle = np.pi / 2
-            elif params == '2π/3':
-                angle = 2 * np.pi / 3
-            elif params == '3π/4':
-                angle = 3 * np.pi / 4
-            elif params == '5π/6':
-                angle = 5 * np.pi / 6
-            elif params == 'π':
-                angle = np.pi
-            elif params == '7π/6':
-                angle = 7 * np.pi / 6
-            elif params == '3π/2':
-                angle = 3 * np.pi / 2
-            elif params == '2π':
-                angle = 2 * np.pi
-            else:
-                angle = float(params)
-        else:
-            angle = float(params)
-    else:
-        base_name = gate_name
-        angle = 1
-    
-    # Применение гейтов
-    if base_name == 'I' and len(controls) == 0:
-        qr.i(target)
-    elif base_name == 'X' and len(controls) == 0:
-        qr.x(target)
-    elif base_name == 'Y' and len(controls) == 0:
-        qr.y(target)
-    elif base_name == 'Z' and len(controls) == 0:
-        qr.z(target)
-    elif base_name == 'H' and len(controls) == 0:
-        qr.h(target)
-    elif base_name == 'S' and len(controls) == 0:
-        qr.s(target)
-    elif base_name == 'T' and len(controls) == 0:
-        qr.t(target)
-    elif base_name == 'P' and len(controls) == 0:
-        qr.p(target, angle)
-    elif base_name == 'Rx' and len(controls) == 0:
-        qr.rx(target, angle)
-    elif base_name == 'Ry' and len(controls) == 0:
-        qr.ry(target, angle)
-    elif base_name == 'Rz' and len(controls) == 0:
-        qr.rz(target, angle)
-    elif base_name == 'X' and len(controls) == 1:
-        qr.cx(controls[0], target)
-    elif base_name == 'Y' and len(controls) == 1:
-        qr.cy(controls[0], target)
-    elif base_name == 'Z' and len(controls) == 1:
-        qr.cz(controls[0], target)
-    elif base_name == 'H' and len(controls) == 1:
-        qr.ch(controls[0], target)
-    elif base_name == 'S' and len(controls) == 1:
-        qr.cs(controls[0], target)
-    elif base_name == 'P' and len(controls) == 1:
-        qr.cp(controls[0], target, angle)
-    elif base_name == 'Rx' and len(controls) == 1:
-        qr.crx(controls[0], target, angle)
-    elif base_name == 'Ry' and len(controls) == 1:
-        qr.cry(controls[0], target, angle)
-    elif base_name == 'Rz' and len(controls) == 1:
-        qr.crz(controls[0], target, angle)
-    elif base_name == 'X' and len(controls) == 2:
-        qr.ccx(controls[0], controls[1], target, angle)
-    elif base_name == 'Z' and len(controls) == 2:
-        qr.ccz(controls[0], controls[1], target, angle)
-    elif base_name == 'M_GROUP':
+    if base_name == 'M_GROUP':
         # Для AriQuantum измерения группируются автоматически
         qr.measure(targets)
+        return
 
+    # Гейты без параметра: (имя, число контролей) -> метод регистра
+    plain = {
+        ('I', 0): qr.i, ('X', 0): qr.x, ('Y', 0): qr.y, ('Z', 0): qr.z,
+        ('H', 0): qr.h, ('S', 0): qr.s, ('T', 0): qr.t,
+    }
+    # Параметрические гейты: сигнатура (qubit, theta)
+    param = {
+        ('P', 0): qr.p, ('Rx', 0): qr.rx, ('Ry', 0): qr.ry, ('Rz', 0): qr.rz,
+    }
+    controlled = {
+        ('X', 1): qr.cx, ('Y', 1): qr.cy, ('Z', 1): qr.cz,
+        ('H', 1): qr.ch, ('S', 1): qr.cs,
+    }
+    controlled_param = {
+        ('P', 1): qr.cp, ('Rx', 1): qr.crx, ('Ry', 1): qr.cry, ('Rz', 1): qr.crz,
+    }
+    toffoli = {('X', 2): qr.ccx, ('Z', 2): qr.ccz}
+
+    key = (base_name, n_ctrl)
+    if key in plain:
+        plain[key](target)
+    elif key in param:
+        param[key](target, angle)
+    elif key in controlled:
+        controlled[key](controls[0], target)
+    elif key in controlled_param:
+        controlled_param[key](controls[0], target, angle)
+    elif key in toffoli:
+        toffoli[key](controls[0], controls[1], target)
+    else:
+        raise ValueError(f'Unsupported gate {gate_name!r} with {n_ctrl} controls')
 
 
 def apply_gate_to_qiskit(qc: QiskitCircuit, op: list, num_qubits: int) -> None:
     """Применяет операцию к Qiskit схеме"""
     gate_name, controls, targets = op
     target = targets[0] if targets else None
-    
-    # Обработка параметрических гейтов
-    if '(' in gate_name:
-        base_name, params = gate_name.split('(', 1)
-        params = params.rstrip(')')
-        if params:
-            if params == 'π/6':
-                angle = np.pi / 6
-            elif params == 'π/4':
-                angle = np.pi / 4
-            elif params == 'π/3':
-                angle = np.pi / 3
-            elif params == 'π/2':
-                angle = np.pi / 2
-            elif params == '2π/3':
-                angle = 2 * np.pi / 3
-            elif params == '3π/4':
-                angle = 3 * np.pi / 4
-            elif params == '5π/6':
-                angle = 5 * np.pi / 6
-            elif params == 'π':
-                angle = np.pi
-            elif params == '7π/6':
-                angle = 7 * np.pi / 6
-            elif params == '3π/2':
-                angle = 3 * np.pi / 2
-            elif params == '2π':
-                angle = 2 * np.pi
-            else:
-                angle = float(params)
-        else:
-            angle = float(params)
-    else:
-        base_name = gate_name
-        angle = 1
-    
-    # Применение гейтов
-    if base_name == 'I' and len(controls) == 0:
-        qc.i(target)
-    elif base_name == 'X' and len(controls) == 0:
-        qc.x(target)
-    elif base_name == 'Y' and len(controls) == 0:
-        qc.y(target)
-    elif base_name == 'Z' and len(controls) == 0:
-        qc.z(target)
-    elif base_name == 'H' and len(controls) == 0:
-        qc.h(target)
-    elif base_name == 'S' and len(controls) == 0:
-        qc.s(target)
-    elif base_name == 'T' and len(controls) == 0:
-        qc.t(target)
-    elif base_name == 'P' and len(controls) == 0:
-        qc.p(angle, target)
-    elif base_name == 'Rx' and len(controls) == 0:
-        qc.rx(angle, target)
-    elif base_name == 'Ry' and len(controls) == 0:
-        qc.ry(angle, target)
-    elif base_name == 'Rz' and len(controls) == 0:
-        qc.rz(angle, target)
-    elif base_name == 'X' and len(controls) == 1:
-        qc.cx(controls[0], target)
-    elif base_name == 'Y' and len(controls) == 1:
-        qc.cy(controls[0], target)
-    elif base_name == 'Z' and len(controls) == 1:
-        qc.cz(controls[0], target)
-    elif base_name == 'H' and len(controls) == 1:
-        qc.ch(controls[0], target)
-    elif base_name == 'S' and len(controls) == 1:
-        qc.cs(controls[0], target)
-    elif base_name == 'P' and len(controls) == 1:
-        qc.cp(angle, controls[0], target)
-    elif base_name == 'Rx' and len(controls) == 1:
-        qc.crx(angle, controls[0], target)
-    elif base_name == 'Ry' and len(controls) == 1:
-        qc.cry(angle, controls[0], target)
-    elif base_name == 'Rz' and len(controls) == 1:
-        qc.crz(angle, controls[0], target)
-    elif base_name == 'X' and len(controls) == 2:
-        qc.ccx(controls[0], controls[1], target)
-    elif base_name == 'Z' and len(controls) == 2:
-        qc.ccz(controls[0], controls[1], target)
-    elif base_name == 'M_GROUP':
-        # # Измеряем в правильном порядке (обратный для Qiskit)
-        # if len(targets) > 1:
-        #     # Создаем классический регистр той же длины
-        #     creg_size = len(targets)
-        #     # Измеряем в обратном порядке
-        #     reversed_targets = list(reversed(targets))
-        #     print(reversed_targets)
-        #     for i, qubit in enumerate(reversed_targets):
-        #         print(qubit, i)
-        #         qc.measure(qubit, i)
-        # else:
-        #     qc.measure(targets[0], 0)
+    base_name, angle = split_gate_name(gate_name)
+    n_ctrl = len(controls)
+
+    if base_name == 'M_GROUP':
         qc.measure(targets, targets)
+        return
+
+    plain = {
+        ('I', 0): qc.id, ('X', 0): qc.x, ('Y', 0): qc.y, ('Z', 0): qc.z,
+        ('H', 0): qc.h, ('S', 0): qc.s, ('T', 0): qc.t,
+    }
+    # Параметрические гейты Qiskit: сигнатура (theta, qubit)
+    param = {
+        ('P', 0): qc.p, ('Rx', 0): qc.rx, ('Ry', 0): qc.ry, ('Rz', 0): qc.rz,
+    }
+    controlled = {
+        ('X', 1): qc.cx, ('Y', 1): qc.cy, ('Z', 1): qc.cz,
+        ('H', 1): qc.ch, ('S', 1): qc.cs,
+    }
+    controlled_param = {
+        ('P', 1): qc.cp, ('Rx', 1): qc.crx, ('Ry', 1): qc.cry, ('Rz', 1): qc.crz,
+    }
+    toffoli = {('X', 2): qc.ccx, ('Z', 2): qc.ccz}
+
+    key = (base_name, n_ctrl)
+    if key in plain:
+        plain[key](target)
+    elif key in param:
+        param[key](angle, target)
+    elif key in controlled:
+        controlled[key](controls[0], target)
+    elif key in controlled_param:
+        controlled_param[key](angle, controls[0], target)
+    elif key in toffoli:
+        toffoli[key](controls[0], controls[1], target)
+    else:
+        raise ValueError(f'Unsupported gate {gate_name!r} with {n_ctrl} controls')
 
 
 def simulate_circuit(
@@ -285,7 +209,8 @@ def simulate_circuit(
                     counts_dict = qr.get_counts(shots)
                     # Конвертируем ключи в строки если нужно
                     counts = {str(k): v for k, v in counts_dict.items()}
-                except:
+                except Exception:
+                    logger.exception('AriQuantum get_counts failed')
                     counts = None
             else:
                 counts = None
@@ -301,7 +226,6 @@ def simulate_circuit(
         for op in grouped_history:
             if op[0] in ['M', 'M_GROUP'] and not found_measurement:
                 # Для Qiskit получаем состояние через Statevector
-                from qiskit.quantum_info import Statevector
                 state_before_measurement = Statevector(qc).to_dict()
                 found_measurement = True
             
@@ -309,13 +233,12 @@ def simulate_circuit(
         
         if state_before_measurement is None:
             # Нет измерений
-            from qiskit.quantum_info import Statevector
             final_state = Statevector(qc)
             # Конвертируем в строку в нотации Дирака
             braket_state = _statevector_to_braket(final_state, num_qubits)
             counts = None
         else:
-            braket_state = _statevector_to_braket_dict(state_before_measurement, num_qubits)
+            braket_state = _statevector_to_braket(state_before_measurement, num_qubits)
             if has_measurements:
                 # Запускаем симуляцию с измерениями
                 simulator = AerSimulator()
@@ -330,52 +253,28 @@ def simulate_circuit(
     return braket_state, counts, execution_time
 
 
-def _statevector_to_braket(statevector, num_qubits: int, decimals: int = 4) -> str:
-    """Конвертирует Statevector в строку Дирака"""
-    from qiskit.quantum_info import Statevector
+def _statevector_to_braket(statevector, num_qubits: int = 0, decimals: int = 4) -> str:
+    """Конвертирует Statevector или словарь {базис: амплитуда} в строку Дирака"""
     if isinstance(statevector, Statevector):
         state_dict = statevector.to_dict()
     else:
         state_dict = statevector
-    
+
     terms = []
     for basis, amplitude in state_dict.items():
         if abs(amplitude) > 1e-10:
-            # Форматируем амплитуду
             real = round(amplitude.real, decimals)
             imag = round(amplitude.imag, decimals)
-            
+
             if imag == 0:
                 coeff = f"{real:.{decimals}f}"
             elif real == 0:
                 coeff = f"{imag:.{decimals}f}j"
             else:
                 coeff = f"({real:.{decimals}f}{imag:+.{decimals}f}j)"
-            
-            terms.append(f"{coeff}|{basis[::-1]}⟩")
-    
-    if not terms:
-        return "0"
-    return " + ".join(terms)
 
-
-def _statevector_to_braket_dict(state_dict: dict, num_qubits: int, decimals: int = 4) -> str:
-    """Конвертирует словарь состояния в строку Дирака"""
-    terms = []
-    for basis, amplitude in state_dict.items():
-        if abs(amplitude) > 1e-10:
-            real = round(amplitude.real, decimals)
-            imag = round(amplitude.imag, decimals)
-            
-            if imag == 0:
-                coeff = f"{real:.{decimals}f}"
-            elif real == 0:
-                coeff = f"{imag:.{decimals}f}j"
-            else:
-                coeff = f"({real:.{decimals}f}{imag:+.{decimals}f}j)"
-            
             terms.append(f"{coeff}|{basis[::-1]}⟩")
-    
+
     if not terms:
         return "0"
     return " + ".join(terms)

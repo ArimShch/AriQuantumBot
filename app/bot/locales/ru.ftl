@@ -1,4 +1,4 @@
-bcmnd_menu = Главная страница
+cmnd_menu = Главная страница
 cmnd_admin = Админ-панель 
 cmnd_help = Помощь и справка
 cmnd_create_circuit = Создание новой схемы
@@ -27,12 +27,33 @@ back_button = ⬅️ Назад
 menu_circuit_button = ⛓️ Мои схемы
 menu_profile_button = 👤 Профиль
 menu_settings_button = ⚙️ Настройки
+menu_template_button = 🗃️ Шаблоны
+
+templates_list_title = 
+    🗃️ <b>Шаблоны</b>
+    <br><br>
+    Здесь собраны классические квантовые алгоритмы и состояния. Вы можете изучить их и использовать как базу для своих схем.
+    <br><br>
+    ℹ️ Ниже выберите шаблон
+
+template_details = 
+    🗃️ <b>Шаблоны: { $name }</b>
+    <br><br>
+    { $description }
+    <br>
+    <pre>{ $circuit_diagram }</pre>
+    <br>
+    ℹ️ Нажмите на кнопку <b>«➕ Создать схему</b>» ниже, чтобы создать свою схему на основе этого алгоритма.
+
+template_not_found = ❌ Шаблон не найден
+
+template_create_btn = ➕ Создать схему
 
 input_circuit_name = 
     { $complexity_level ->
         [Novice] Придумайте имя для вашей квантовой схемы и отправьте его (например, «Моя первая схема»).
         [Student] Укажите имя схемы (это поможет вам найти её позже).
-        [Searcher] Укажите уникальное имя схемы для последующего доступа.
+        [Researcher] Укажите уникальное имя схемы для последующего доступа.
        *[default] Введите имя схемы:
     }
 
@@ -41,7 +62,7 @@ input_num_qubits_text =
         [Novice] 🔢 Сколько кубитов будет в вашей схеме?
             Отправьте число от 1 до { $num_qubits }. Например: «3».
         [Student] Отправьте количество кубитов (1–{ $num_qubits }):
-        [Searcher] Задайте число кубитов (макс. { $num_qubits }):
+        [Researcher] Задайте число кубитов (макс. { $num_qubits }):
        *[default] Отправьте количество кубитов (1–{ $num_qubits }):
     }
 
@@ -50,7 +71,7 @@ input_num_qubits_keyboard =
         [Novice] 🔢 Сколько кубитов будет в вашей схеме?
             Нажмите на кнопку с нужным числом (от 1 до { $num_qubits }). 
         [Student] Выберите количество кубитов:
-        [Searcher] Укажите число кубитов:
+        [Researcher] Укажите число кубитов:
        *[default] Выберите количество кубитов:
     }
 
@@ -81,8 +102,6 @@ circuit_details =
     <br>
     <pre>{ $circuit_diagram }</pre>
     <br>
-    Бэкенд: <b>{ $backend }</b>
-    <br><br>
     { $has_simulation ->
         [True] Результат последней симуляции:
         [False] Текущее состояние (до симуляции):
@@ -139,11 +158,81 @@ circuit_edit_menu =
     <br>
     <pre>{ $circuit_diagram }</pre>
     <br>
-    ℹ️ Выберите действие:
+    ℹ️ Выберите действие:ㅤㅤㅤㅤㅤㅤ
 
 circuit_rename_prompt = Укажите новое имя для квантовой схемы (макс. 50 символов):
 circuit_name_invalid = ❌ Некорректное имя! Имя не должно быть пустым и превышать 50 символов.
+circuit_name_not_unique = ❌ Схема с таким именем уже существует! Пожалуйста, выберите другое.
 
+delete_gate_message = 
+    { $has_gates ->
+        [True]  <b>{ $circuit_name }</b>
+                <br>
+                <pre>{ $circuit_diagram }</pre>
+                <br>
+                История примененных гейтов:
+                { $gates_table }
+                ℹ️ Выберите номер гейта для удаления.
+        [False] <b>{ $circuit_name }</b>
+                <br>
+                <pre>{ $circuit_diagram }</pre>
+                <br>
+                ℹ️ История пуста. Нет гейтов для удаления.
+        *[default]  <b>{ $circuit_name }</b>
+                    <br>
+                    <pre>{ $circuit_diagram }</pre>
+                    <br>
+                    История примененных гейтов:
+                    { $gates_table }
+                    ℹ️ Выберите номер гейта для удаления.
+    }
+
+export_menu_text = 
+    { $complexity_level -> 
+        [Researcher] 
+                <b>{ $circuit_name }</b>
+                <br>
+                <pre>{ $circuit_diagram }</pre>
+                <br>
+                ℹ️ Выберите формат экспорта:
+        *[default]
+                <b>{ $circuit_name }</b>
+                <br>
+                <pre>{ $circuit_diagram }</pre>
+                <br>
+                • 🔹 <b>OpenQASM 2.0</b> — Файл .qasm с декларативным описанием схемы. Поддерживается многими квантовыми платформами<br>
+                • 🔸 <b>OpenQASM 3.0</b> — Файл .qasm современного формата с расширенным синтаксисом (функции, циклы, классические операции)<br>
+                • 🐍 <b>AriQuantum</b> — Файл .py с Python-кодом на библиотеке ariquantum<br>
+                • 🐍 <b>Qiskit</b> — Файл .py с Python-кодом на библиотеках qiskit и qiskit_aer
+                <br><br>
+                ℹ️ Выберите формат экспорта:
+    }
+
+export_success_text =
+    { $format_name ->
+        [AriQuantum]
+            📤 <b>Экспорт схемы «{ $circuit_name }»</b>
+    
+            🔄 Формат: <b>{ $format_name }</b>
+
+            <pre><code class="language-python">{ $code }</code></pre>
+        [Qiskit]
+            📤 <b>Экспорт схемы «{ $circuit_name }»</b>
+    
+            🔄 Формат: <b>{ $format_name }</b>
+            
+            <blockquote expandable>⚠️ В Qiskit результаты измерений (базисные состояния вектора и результаты отдельных запусков) записываются в классические биты в обратном порядке относительно кубитов. Например, состояние |110⟩ означает: q₂=1, q₁=1, q₀=0 → классический результат «110».
+            
+            В AriQuantum (как в Python-библиотеке, так и в Telegram-боте) же |110⟩ читается как |q₀q₁q₂⟩ (q₀=1, q₁=1, q₂=0). Это не ошибка, а разные соглашения: AriQuantum использует big-endian (интуитивно для человека), а Qiskit — little-endian (как в классических числах).
+            </blockquote>
+            <pre><code class="language-python">{ $code }</code></pre>
+        *[default]
+            📤 <b>Экспорт схемы «{ $circuit_name }»</b>
+    
+            🔄 Формат: <b>{ $format_name }</b>
+
+            <pre>{ $code }</pre>
+    }
 
 
 # Статусы
@@ -155,19 +244,26 @@ circuit_deleted = Схема удалена! 🗑️
 measurement_applied_single = Измерение применено! 📏
 measurement_applied_multiple = Измерение применено к { $count } кубитам! 📏
 gate_cannot_be_applied_to_measured_qubits = ❌ Нельзя применять квантовый гейт «{ $gate_name }» к измеренным кубитам.
+delete_gate_success = ✅ Гейт успешно удален из схемы.
+delete_measurements_success = ✅ Удалено измерений: { $count }. 
+export_success_alert = ✅ Схема успешно экспортирована!
 
 
 # Кнопки
 circuit_edit_clear_button = 🧹 Очистить схему
 circuit_edit_delete_button = 🗑️ Удалить схему  
 circuit_edit_rename_button = ✏️ Переименовать
+circuit_edit_export_button = 📤 Экспортировать схему
 reset_qubit_selection = 🔄 Отменить выбор
 circuit_apply_gate_button = ➕ Применить гейт
 circuit_edit_button = 📋 Редактировать схему
 circuit_simulate_button = 🚀 Запустить симуляцию
+gate_measure_btn = 📏 Измерение
 measure_all_qubits_button = 📏 Измерить все кубиты
+circuit_edit_delete_gate_button = ✂️ Удалить гейт
+delete_all_measurements_button = Удалить все измерения
 
-
+settings_ask_at_runtime = ❓ Выбирать при запуске
 
 error_input_circuit_name = 
     Возникла ошибка! Пожалуйста, отправьте <b>текстовое сообщение</b> с уникальным названием схемы. 
@@ -182,7 +278,7 @@ error_num_qubits_invalid =
 
 error_input_num_qubits = 
     Некорректное значение.  
-    Укажите число от 1 до { $max_qubits } — именно столько кубитов поддерживает выбранный бэкенд.
+    Укажите число от 1 до { $max_qubits } (это максимальное число кубитов для одной схемы).
     
 
 test = OK
@@ -197,6 +293,7 @@ settings_menu =
     🤖 Автоматическое имя схемы: <b>{ $automatic_name }</b>
     🔢 Ввод кубитов текстом: <b>{ $qubit_input_text }</b>
     📊 Запусков симуляции: <b>{ $simulation_shots }</b>
+    🖼 Формат графиков: <b>{ $output_mode }</b>
 
 settings_language_button = 🌐 Язык
 settings_complexity_button = 🎓 Уровень сложности  
@@ -204,6 +301,20 @@ settings_backend_button = 💻 Бэкенд
 settings_automatic_name_button = 🤖 Автоматическое имя схемы
 settings_qubit_input_text_button = 🔢 Ввод кубитов текстом
 settings_simulation_shots_button = 📊 Запуски симуляции
+
+settings_output_mode_button = 🖼 Формат вывода
+
+settings_output_mode_menu = 
+    🖼 <b>Формат вывода графиков и схем</b>
+
+    🧩 <b>HTML-виджет</b> — красивый интерактивный график прямо в сообщении (только в личном чате с ботом).
+    🔤 <b>ASCII-текст</b> — простой текстовый вывод, работает везде.
+
+    ℹ️ Текущий формат: { $current }
+
+settings_output_mode_widget = 🧩 HTML-виджет
+settings_output_mode_ascii = 🔤 ASCII-текст
+settings_output_mode_updated = 🖼 Формат вывода обновлён!
 
 settings_language_menu = 
     🌐 <b>Выбор языка</b>
@@ -258,12 +369,23 @@ settings_simulation_shots_updated = 📊 Количество запусков �
 settings_automatic_name_updated = 🤖 Автоматическое имя схемы обновлено!
 settings_qubit_input_text_updated = 🔢 Режим ввода кубитов обновлён!
 
+simulation_select_backend = 
+    💻 <b>Выберите бэкенд для этой симуляции:</b>
+    
+    • <b>AriQuantum</b> — быстрее для простых схем (до 6 кубитов).
+    • <b>Qiskit</b> — стандарт от IBM, поддержка сложных схем до 10 кубитов.
+
+simulation_select_shots = 
+    📊 <b>Выберите количество запусков (shots):</b>
+
+simulation_forced_qiskit = ℹ️ Схема содержит > 6 кубитов, поэтому симуляция принудительно выполнена на бэкенде <b>Qiskit</b>.<br><br>
+
 simulation_result_with_measurements = 
     🚀 <b>Симуляция схемы «{ $circuit_name }»</b>
     <br>
     <pre>{ $circuit_diagram }</pre>
     <br>
-    💻 Использованный бэкенд: <b>{ $backend }</b><br>
+    { $forced_warning }💻 Использованный бэкенд: <b>{ $backend }</b><br>
     ⏱️ Время выполнения: <b>{ $execution_time } сек</b>
     <br><br>
     📌 <b>Состояние до первого измерения:</b>
@@ -277,11 +399,35 @@ simulation_result_without_measurements =
     <br>
     <pre>{ $circuit_diagram }</pre>
     <br>
-    💻 Использованный бэкенд: <b>{ $backend }</b><br>
+    { $forced_warning }💻 Использованный бэкенд: <b>{ $backend }</b><br>
     ⏱️ Время выполнения: <b>{ $execution_time } сек</b>
     <br><br>
     📌 <b>Вектор состояния:</b>
     <pre>{ $braket_state }</pre>
+
+simulation_result_with_measurements_widget = 
+    🚀 <b>Симуляция схемы «{ $circuit_name }»</b>
+    <br>
+    <pre>{ $circuit_diagram }</pre>
+    <br>
+    { $forced_warning }💻 Использованный бэкенд: <b>{ $backend }</b><br>
+    ⏱️ Время выполнения: <b>{ $execution_time } сек</b>
+    <br><br>
+    📌 <b>Состояние до первого измерения:</b>
+    <pre>{ $braket_state }</pre>
+
+simulation_widget_detail_count = Выпало
+simulation_widget_detail_of = из
+simulation_widget_detail_share = Доля
+simulation_widget_detail_qubits = Кубиты
+
+simulation_widget_title = 📊 <b>Результаты { $shots } запусков</b>
+
+simulation_widget_hidden_note = ℹ️ Показаны { $shown } самых частых состояний из { $total }
+
+simulation_counts_fallback = 
+    📊 <b>Результаты { $shots } запусков:</b>
+    <pre>{ $counts }</pre>
 
 simulation_back_to_circuit_button = ◀️ Вернуться к схеме
 simulation_error = ❌ Ошибка при симуляции схемы!
@@ -308,16 +454,24 @@ command_admin =
 
     ℹ️ Выберите действие ниже:
 
-admin_users_btn = Статистика «👤 Пользователи»
-admin_circuits_btn = Статистика «⛓️ Схемы» 
-admin_backends_btn = Статистика «💻 Бэкенды»
+admin_users_btn = 👥 Пользователи
+admin_circuits_btn = ⛓️ Схемы 
+admin_backends_btn = 💻 Бэкенды
 admin_blocked_btn = ❌ Заблокировать юзера
 admin_message_btn = 📩 Разослать сообщение
-admin_stat_btn = Статистика «📊 Настройки»
+admin_stat_btn = 📊 Настройки
 admin_menu_btn = ⏪ Админ меню
+admin_users_activity_btn = 📊 Активность пользователей
+admin_user_search_btn = 🔍 Поиск пользователя
+admin_users_new_stats_btn = 📈 Статистика по дням
+
+admin_users_section_title = 
+    👥 <b>Управление пользователями</b>
+    
+    Выберите нужный раздел:
 
 admin_users = 
-    <b>Статистика «👤 Пользователи»</b>
+    <b>Статистика «👥 Пользователи»</b>
 
     <b>ВСЕГО пользователей:</b> 👥 { $all_users }
 
@@ -350,9 +504,6 @@ admin_circuits =
 
 admin_backends = 
     <b>Статистика «💻 Бэкенды»</b>
-
-    <b>⛓️ Схемы: </b>
-    { $backends_circuits_text }
 
     <b>🚀 Симуляции: </b>
     { $backends_simulations_text }
@@ -439,11 +590,102 @@ help_message =
 
 
 admin_broadcast_prompt = 
-    📢 Введите текст для рассылки всем пользователям. 
-    Сообщение будет автоматически разослано каждому пользователю.
+    📢 Введите текст (Форматирование осуществляется через html-теги) для рассылки всем пользователям <b>на РУССКОМ языке</b>:
+
+admin_broadcast_prompt_en = 
+    🇬🇧 Отлично. Теперь введите текст для рассылки <b>на АНГЛИЙСКОМ языке</b>:
 
 admin_broadcast_started = 
     🚀 Рассылка запущена в фоновом режиме. Вы получите отчёт по завершении.
 
 admin_broadcast_empty = 
     ❌ Текст рассылки не может быть пустым.
+
+
+# =============== НОВОЕ ================
+
+admin_new_user_notification = 
+    🆕 <b>Новый пользователь</b>
+
+    👤 { $user_link }
+
+    🆔 ID: <b>{ $user_id }</b>
+    📛 Username: { $username }
+    📝 Полное имя: <b>{ $full_name }</b>
+    🔗 Источник: <b>{ $source }</b>
+    { $locale_flag } Язык Telegram: <b>{ $locale_code }</b>
+
+admin_new_circuit_notification = 
+    ⚛️ <b>Новая схема</b>
+
+    Была создана схема «{ $circuit_name }» пользователем { $user } с { $num_qubits } кубитами.
+
+admin_user_search_prompt = 
+    🔍 <b>Поиск пользователя</b>
+
+    Отправьте ID, username, имя или фамилию пользователя.
+
+admin_user_search_empty = ❌ Запрос не может быть пустым.
+
+admin_user_not_found = ❌ Пользователь по запросу «<code>{ $query }</code>» не найден.
+
+admin_user_block_btn = 🚫 Заблокировать
+admin_user_unblock_btn = ✅ Разблокировать
+
+admin_user_status_blocked = заблокирован
+admin_user_status_active = разблокирован
+
+admin_user_block_toggled = ✅ Пользователь { $status }.
+
+admin_user_profile = 
+    { $role_emoji } <b>Профиль пользователя</b>
+    <br><br>
+    🆔 ID: { $user_id }<br>
+    📛 Username: { $username }<br>
+    📝 Имя: { $first_name } { $last_name }<br>
+    { $is_blocked ->
+        [true] 🚫 Статус: <b>Заблокирован</b>
+       *[other] ✅ Статус: <b>Активен</b>
+    }<br>
+    📅 Регистрация: { $date_joined }<br>
+    🕐 Последняя активность: { $last_activity }<br>
+    🔗 Источник: { $ref_source }<br>
+    🌍 Язык Telegram: { $tg_locate }<br>
+    <br>
+    <b>⚙️ Настройки:</b><br>
+    🌐 Язык: { $language }<br>
+    🎓 Уровень: { $complexity }<br>
+    💻 Бэкенд: { $backend }<br>
+    🔢 Shots: { $shots }<br>
+    🤖 Автоимя схемы: { $automatic_name }<br>
+    🔢 Ввод кубитов текстом: { $qubit_input_text }<br>
+    <br>
+    <b>📐 Схемы:</b><br>
+    • Создано всего: { $total_circuits_created }<br>
+    • Сейчас в БД: { $circuits_count }<br>
+    { $circuits_list }<br>
+    { $circuits_more ->
+        [0] { "" }
+       *[other] <i>... и ещё { $circuits_more } схем</i>
+    }<br>
+    <b>🧪 Симуляции:</b><br>
+    • Проведено всего: { $total_simulations_run }<br>
+    • Сейчас в БД: { $simulations_count }<br>
+    <b>По бэкендам:</b><br>
+    { $backend_stats_list }<br>
+    <b>Общая:</b><br>
+    • Среднее кубитов: { $overall_avg_qubits }<br>
+    • Среднее время: { $overall_avg_time }<br>
+    <br>
+    <b>📊 Активность:</b><br>
+    • Дней в боте: { $activity_count }<br>
+    { $activity_list }<br>
+    { $activity_more ->
+        [0] { "" }
+       *[other] <i>... и ещё { $activity_more } дней</i>
+    }
+
+admin_users_new_stats_text =
+    📈 <b>Новые пользователи по дням:</b>
+    
+    { $stats_list }

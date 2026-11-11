@@ -153,7 +153,11 @@ class Backend(Base):
         back_populates='backend', 
         lazy='selectin'
     )
-    quantum_circuits: Mapped[List["QuantumCircuit"]] = relationship(
+    # quantum_circuits: Mapped[List["QuantumCircuit"]] = relationship(
+    #     back_populates='backend', 
+    #     lazy='selectin'
+    # )
+    quantum_simulations: Mapped[List["QuantumSimulation"]] = relationship(
         back_populates='backend', 
         lazy='selectin'
     )
@@ -197,12 +201,21 @@ class UserSetting(Base):
     simulation_shots: Mapped[int] = mapped_column(
         Integer, 
         CheckConstraint("simulation_shots BETWEEN 1 AND 1000"), 
-        default=text('10'),
+        default=text('100'),
+        nullable=True,
     )
     backend_id: Mapped[int] = mapped_column(
         ForeignKey('backend.id', ondelete='RESTRICT'), 
-        nullable=False, 
+        nullable=True, 
         default=text('1')                   # ariquantum
+    )
+    # Формат вывода графиков и схем: 'widget' (HTML-виджет) или 'ascii' (текст)
+    output_mode: Mapped[str] = mapped_column(
+        String(10),
+        CheckConstraint("output_mode IN ('widget', 'ascii')", name='ck_user_setting_output_mode'),
+        server_default=text("'widget'"),
+        default='widget',
+        nullable=False,
     )
 
     user: Mapped["User"] = relationship(
@@ -232,9 +245,9 @@ class QuantumCircuit(Base):
         ForeignKey('users.id', ondelete='CASCADE'),
         index=True, 
     )
-    backend_id: Mapped[int] = mapped_column(
-        ForeignKey('backend.id', ondelete='RESTRICT'), 
-    )
+    # backend_id: Mapped[int] = mapped_column(
+    #     ForeignKey('backend.id', ondelete='RESTRICT'), 
+    # )
     circuit_name: Mapped[str] = mapped_column(String(50))
     num_qubits: Mapped[int] = mapped_column(
         SmallInteger,
@@ -255,10 +268,10 @@ class QuantumCircuit(Base):
         back_populates='quantum_circuit', 
         lazy='selectin', 
     )
-    backend: Mapped['Backend'] = relationship(
-        back_populates='quantum_circuits', 
-        lazy='selectin'
-    )
+    # backend: Mapped['Backend'] = relationship(
+    #     back_populates='quantum_circuits', 
+    #     lazy='selectin'
+    # )
 
 
 class QuantumSimulation(Base):
@@ -274,6 +287,9 @@ class QuantumSimulation(Base):
         ForeignKey('quantum_circuit.id', ondelete='CASCADE'), 
         nullable=True, 
         index=True
+    )
+    backend_id: Mapped[int] = mapped_column(
+        ForeignKey('backend.id', ondelete='RESTRICT')
     )
     braket_state: Mapped[str] = mapped_column(
         Text, 
@@ -299,6 +315,10 @@ class QuantumSimulation(Base):
     user: Mapped['User'] = relationship(
         back_populates='user_simulations', 
         lazy='selectin', 
+    )
+    backend: Mapped['Backend'] = relationship(
+        back_populates='quantum_simulations', 
+        lazy='selectin'
     )
 
 class UserActivityLog(Base):

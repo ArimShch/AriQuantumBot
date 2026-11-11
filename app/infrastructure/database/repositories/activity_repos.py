@@ -1,8 +1,8 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func, desc, delete, insert, text 
+from sqlalchemy import Date, cast, select, update, func, desc, delete, insert, text 
 
 from ..models.models import UserActivityLog, User, QuantumCircuit, QuantumSimulation, Backend, UserSetting, Language, ComplexityLevel
 
@@ -73,9 +73,9 @@ class ActivityRepository:
             self, session: AsyncSession, 
     ):
         query = (
-            select(User.username, func.count(UserActivityLog.user_id))
+            select(User.id, User.username, User.first_name, User.last_name, func.count(UserActivityLog.user_id))
             .join(User)
-            .group_by(User.username)
+            .group_by(User.id, User.username, User.first_name, User.last_name,)
             .order_by(func.count(UserActivityLog.user_id).desc())
             .limit(5)
         )
@@ -89,9 +89,9 @@ class ActivityRepository:
             self, session: AsyncSession, 
     ):
         query = (
-            select(User.username, func.sum(UserActivityLog.circuits_created))
+            select(User.id, User.username, User.first_name, User.last_name, func.sum(UserActivityLog.circuits_created))
             .join(User)
-            .group_by(User.username)
+            .group_by(User.id, User.username, User.first_name, User.last_name)
             .order_by(func.sum(UserActivityLog.circuits_created).desc())
             .limit(5)
         )
@@ -105,9 +105,9 @@ class ActivityRepository:
             self, session: AsyncSession, 
     ):
         query = (
-            select(User.username, func.sum(UserActivityLog.simulations_run))
+            select(User.id, User.username, User.first_name, User.last_name, func.sum(UserActivityLog.simulations_run))
             .join(User)
-            .group_by(User.username)
+            .group_by(User.id, User.username, User.first_name, User.last_name)
             .order_by(func.sum(UserActivityLog.simulations_run).desc())
             .limit(5)
         )
@@ -227,8 +227,7 @@ class ActivityRepository:
         query = (
             select(Backend.name, func.count(QuantumSimulation.id))
             .select_from(QuantumSimulation)
-            .join(QuantumCircuit)
-            .join(Backend)
+            .join(Backend, QuantumSimulation.backend_id == Backend.id)
             .group_by(Backend.name, Backend.id)
             .order_by(Backend.name)
         )
@@ -240,8 +239,9 @@ class ActivityRepository:
     async def get_avg_qubits_by_backends(self, session: AsyncSession):
         query = (
             select(Backend.name, func.avg(QuantumCircuit.num_qubits))
-            .select_from(QuantumCircuit)
-            .join(Backend)
+            .select_from(QuantumSimulation)
+            .join(QuantumCircuit, QuantumSimulation.circuit_id == QuantumCircuit.id)
+            .join(Backend, QuantumSimulation.backend_id == Backend.id)
             .group_by(Backend.name, Backend.id)
             .order_by(Backend.name)
         )
@@ -254,13 +254,13 @@ class ActivityRepository:
         query = (
             select(Backend.name, func.avg(QuantumSimulation.execution_time))
             .select_from(QuantumSimulation)
-            .join(QuantumCircuit)
-            .join(Backend)
+            .join(Backend, QuantumSimulation.backend_id == Backend.id)
             .group_by(Backend.name, Backend.id)
             .order_by(Backend.name)
         )
         result = await session.execute(query)
         return result.fetchall()
+    
     
     async def get_users_by_language(self, session: AsyncSession):
         """Статистика по языкам"""
@@ -287,11 +287,11 @@ class ActivityRepository:
 
 
     async def get_users_by_backend(self, session: AsyncSession):
-        """Статистика по бэкендам"""
+        """Статистика по бэкендам в настройках (с учетом 'Спрашивать при запуске')"""
         result = await session.execute(
             select(Backend.name, func.count(UserSetting.id))
             .select_from(UserSetting)
-            .join(Backend)
+            .outerjoin(Backend, UserSetting.backend_id == Backend.id)
             .group_by(Backend.id, Backend.name)
             .order_by(func.count(UserSetting.id).desc())
         )
@@ -358,5 +358,29 @@ class ActivityRepository:
         return result.fetchall()
     
 
+    async def get_new_users_by_date(
+        self, 
+        session: AsyncSession, 
+        limit: int = 20
+    ) -> list[tuple[date, int]]:
+        """
+        Возвращает статистику новых регистраций по дням.
+        Формат возврата: [(date(2026, 8, 11), 15), (date(2026, 8, 10), 4), ...]
+        """
+        query = (
+            select(
+                cast(User.date_joined, Date).label("reg_date"),
+                func.count(User.id).label("count")
+            )
+            .group_by(cast(User.date_joined, Date))
+            .order_by(desc("reg_date"))
+            .limit(limit)
+        )
+        
+        result = await session.execute(query)
+        rows = result.all()
+
+        # Возвращаем список кортежей (дата, количество)
+        return [(row.reg_date, row.count) for row in rows]
         
 

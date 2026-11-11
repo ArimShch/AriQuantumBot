@@ -1,8 +1,9 @@
 import logging
 from fluentogram import TranslatorRunner
+import math
 
 from aiogram import Bot, Router, F
-from aiogram.types import CallbackQuery, InputRichMessage, Message
+from aiogram.types import CallbackQuery, InputRichMessage, Message, BufferedInputFile
 from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State
@@ -10,7 +11,17 @@ from aiogram.fsm.state import State
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..utils.draw_circuit import draw_history
+from ..utils.circuit_view import render_circuit_details
+from ..utils.circuit_screen import present, edit_screen
 from ..utils.check_measured import validate_gate_on_measured_qubits
+from ..utils.delete_gate_table import generate_gates_table_html 
+from ..utils.exporters import (
+    export_to_ariquantum, 
+    export_to_qasm2,
+    export_to_qasm3,
+    export_to_qiskit,
+)
+from ..utils.en_to_ru import slugify_filename
 from ..filters.is_owner_circuit import IsCircuitOwner
 from ..states.states import States
 from ...infrastructure.database.models.models import UserSetting, QuantumCircuit, User
@@ -25,7 +36,9 @@ from ..keyboards.circuit_manage_keyboards import (
     builder_apply_gate_second_control, 
     builder_circuit_edit_menu, 
     builder_apply_gate_target_qubit_measurement, 
-
+    builder_delete_gate_keyboard,
+    builder_export_format_keyboard,
+    builder_export_result_keyboard,
 )
 
 
@@ -80,31 +93,11 @@ async def menu_circuit_id_button_func(
     )
     # print(circuit.circuit_history)
 
-    last_simulation = await circuit_repository.get_last_simulation_circuit(
-        session=session, 
-        circuit_id=circuit_id, 
-    )
-    if not last_simulation:
-        state_vector = f'|{"0" * circuit.num_qubits}⟩'
-        has_simulation = 'False'
-    else:
-        state_vector = last_simulation.braket_state
-        has_simulation = 'True'
+    text = await render_circuit_details(session, i18n, circuit)
 
-    text = i18n.circuit_details(
-        circuit_name=circuit.circuit_name, 
-        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
-        state_vector=state_vector,
-        backend=circuit.backend.name, 
-        has_simulation=has_simulation, 
-    )
-
-    await callback.message.edit_text(
-        # text=text, 
-        reply_markup=builder_circuit_manage(
-            i18n, circuit_id
-        ), 
-        rich_message=InputRichMessage(html=text)
+    await present(
+        callback, session=session, i18n=i18n, circuit=circuit,
+        html=text, reply_markup=builder_circuit_manage(i18n, circuit_id), circuit_changed=True,
     )
 
     await state.set_state(
@@ -149,7 +142,8 @@ async def circuit_apply_gate_button_func(
         circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=text, 
         reply_markup=builder_circuit_apply_gates(
             num_qubits=circuit.num_qubits, 
@@ -213,7 +207,8 @@ async def input_single_qubit_gate(
             i18n=i18n, 
         )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         text=text,
         reply_markup=reply_markup, 
         rich_message=InputRichMessage(html=text)
@@ -249,7 +244,8 @@ async def input_parametric_gate_select_angle(
         controls=[],
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_angle(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -297,7 +293,8 @@ async def input_parametric_gate_angle_selected(
         gate_name=f'{gate_name}({angle})',
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_target_qubit(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -347,7 +344,8 @@ async def input_two_qubit_gate_select_first_control(
         controls=[],
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_first_control(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -397,7 +395,8 @@ async def input_two_qubit_parametric_gate_select_angle(
         controls=[],
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_angle(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -445,7 +444,8 @@ async def input_two_qubit_parametric_gate_angle_selected(
         gate_name=f'{gate_name}({angle})',
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_first_control(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -500,7 +500,8 @@ async def input_two_qubit_gate_first_control_selected(
         controls=[control_qubit],
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_target_qubit(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -550,7 +551,8 @@ async def input_three_qubit_gate_select_first_control(
         controls=[],
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_first_control(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -600,7 +602,8 @@ async def input_three_qubit_gate_first_control_selected(
         controls=[first_control],
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_second_control(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -651,7 +654,8 @@ async def input_three_qubit_gate_second_control_selected(
         controls=[first_control, second_control],
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=i18n.apply_gate_select_target_qubit(
         #     circuit_name=circuit.circuit_name, 
         #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -713,31 +717,11 @@ async def input_measurement_target_qubit(
     await session.refresh(circuit)
 
     # Получаем результат последней симуляции (если есть)
-    last_simulation = await circuit_repository.get_last_simulation_circuit(
-        session=session, 
-        circuit_id=circuit_id, 
-    )
-    
-    if last_simulation:
-        state_vector = last_simulation.braket_state
-        has_simulation = 'True'
-    else:
-        state_vector = f'|{"0" * circuit.num_qubits}⟩'
-        has_simulation = 'False'
+    text = await render_circuit_details(session, i18n, circuit)
 
-    # Возвращаемся в управление схемой
-    text = i18n.circuit_details(
-        circuit_name=circuit.circuit_name, 
-        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
-        backend=circuit.backend.name, 
-        state_vector=state_vector,
-        has_simulation=has_simulation, 
-    )
-
-    await callback.message.edit_text(
-        # text=text, 
-        reply_markup=builder_circuit_manage(i18n, circuit_id), 
-        rich_message=InputRichMessage(html=text), 
+    await present(
+        callback, session=session, i18n=i18n, circuit=circuit,
+        html=text, reply_markup=builder_circuit_manage(i18n, circuit_id), circuit_changed=True,
     )
     await state.set_state(States.circuit_manage)
     
@@ -815,31 +799,11 @@ async def input_target_qubit_selected(
     await session.refresh(circuit)
 
     # Получаем результат последней симуляции (если есть)
-    last_simulation = await circuit_repository.get_last_simulation_circuit(
-        session=session, 
-        circuit_id=circuit_id, 
-    )
-    
-    if last_simulation:
-        state_vector = last_simulation.braket_state
-        has_simulation = 'True'
-    else:
-        state_vector = f'|{"0" * circuit.num_qubits}⟩'
-        has_simulation = 'False'
+    text = await render_circuit_details(session, i18n, circuit)
 
-    # Возвращаемся в управление схемой
-    text = i18n.circuit_details(
-        circuit_name=circuit.circuit_name, 
-        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
-        backend=circuit.backend.name, 
-        state_vector=state_vector,
-        has_simulation=has_simulation, 
-    )
-
-    await callback.message.edit_text(
-        # text=text, 
-        reply_markup=builder_circuit_manage(i18n, circuit_id), 
-        rich_message=InputRichMessage(html=text), 
+    await present(
+        callback, session=session, i18n=i18n, circuit=circuit,
+        html=text, reply_markup=builder_circuit_manage(i18n, circuit_id), circuit_changed=True,
     )
     await state.set_state(States.circuit_manage)
     await callback.answer(i18n.gate_applied_successfully())
@@ -890,7 +854,8 @@ async def reset_qubit_selection(
             # Однокубитный гейт - возвращаемся к выбору гейта
             await state.clear()
             await state.update_data(circuit_id=circuit_id)
-            await callback.message.edit_text(
+            await edit_screen(
+                callback,
                 # text=i18n.apply_gate_prompt(
                 #     circuit_name=circuit.circuit_name,
                 #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -909,7 +874,8 @@ async def reset_qubit_selection(
         elif len(controls) == 1:
             # Двухкубитный гейт - возвращаемся к выбору контролирующего
             gate_base = gate_name.split('(')[0]
-            await callback.message.edit_text(
+            await edit_screen(
+                callback,
                 # text=i18n.apply_gate_select_first_control(
                 #     circuit_name=circuit.circuit_name,
                 #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -932,7 +898,8 @@ async def reset_qubit_selection(
         else:
             # Трёхкубитный гейт - возвращаемся к выбору второго контролирующего
             gate_base = gate_name.split('(')[0]
-            await callback.message.edit_text(
+            await edit_screen(
+                callback,
                 # text=i18n.apply_gate_select_second_control(
                 #     circuit_name=circuit.circuit_name,
                 #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -956,7 +923,8 @@ async def reset_qubit_selection(
     elif current_state == States.input_second_control_qubit:
         # Возвращаемся к выбору первого контролирующего
         gate_base = gate_name.split('(')[0]
-        await callback.message.edit_text(
+        await edit_screen(
+            callback,
             # text=i18n.apply_gate_select_first_control(
             #     circuit_name=circuit.circuit_name,
             #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -981,7 +949,8 @@ async def reset_qubit_selection(
         # Возвращаемся к выбору гейта
         await state.clear()
         await state.update_data(circuit_id=circuit_id)
-        await callback.message.edit_text(
+        await edit_screen(
+            callback,
             # text=i18n.apply_gate_prompt(
             #     circuit_name=circuit.circuit_name,
             #     circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
@@ -1029,12 +998,215 @@ async def circuit_edit_menu(
         circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
     )
 
-    await callback.message.edit_text(
+    await edit_screen(
+        callback,
         # text=text, 
         reply_markup=builder_circuit_edit_menu(circuit_id, i18n), 
         rich_message=InputRichMessage(html=text),
     )
     await callback.answer()
+
+
+# ====================================================================
+# ШАГ 1.5: Удаление конкретного гейта
+# ====================================================================
+
+@circuit_manage_router.callback_query(F.data == 'ignore')
+@circuit_manage_router.callback_query(F.data == 'ignore_prev')
+@circuit_manage_router.callback_query(F.data == 'ignore_next')
+async def ignore_buttons_func(
+    callback: CallbackQuery
+):
+    await callback.answer()
+
+
+# 1. Открытие меню удаления
+@circuit_manage_router.callback_query(
+    F.data.regexp(r"^circuits:\d+:edit:delete_gate$"),
+    IsCircuitOwner()
+)
+async def circuit_delete_gate_menu(
+    callback: CallbackQuery,
+    session: AsyncSession, 
+    i18n: TranslatorRunner,
+    circuit_id: int,
+):
+    circuit = await circuit_repository.get_circuit(
+        session=session, tg_id=callback.from_user.id, circuit_id=circuit_id
+    )
+    has_measurement_gates = any(gate[0] == 'M' for gate in circuit.circuit_history)
+    
+    table_html = generate_gates_table_html(circuit.circuit_history, page=1)
+    text = i18n.delete_gate_message(
+        circuit_name=circuit.circuit_name,
+        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
+        gates_table=table_html,
+        has_gates='True' if table_html else 'False'
+    )
+    keyboard = builder_delete_gate_keyboard(
+        circuit_id=circuit_id,
+        total_gates=len(circuit.circuit_history),
+        current_page=1,
+        i18n=i18n,
+        has_measurements=has_measurement_gates
+    )
+
+    await edit_screen(
+        callback,
+        rich_message=InputRichMessage(html=text),
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+# 2. Пагинация
+@circuit_manage_router.callback_query(
+    F.data.regexp(r"^circuits:\d+:edit:delete_gate:page:\d+$"),
+    IsCircuitOwner()
+)
+async def circuit_delete_gate_pagination(
+    callback: CallbackQuery,
+    session: AsyncSession, 
+    i18n: TranslatorRunner,
+    circuit_id: int,
+):
+    page = int(callback.data.split(":")[-1])
+    
+    circuit = await circuit_repository.get_circuit(
+        session=session, tg_id=callback.from_user.id, circuit_id=circuit_id
+    )
+    has_measurement_gates = any(gate[0] == 'M' for gate in circuit.circuit_history)
+    
+    table_html = generate_gates_table_html(circuit.circuit_history, page=page)
+    text = i18n.delete_gate_message(
+        circuit_name=circuit.circuit_name,
+        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
+        gates_table=table_html,
+        has_gates='True' if table_html else 'False'
+    )
+    keyboard = builder_delete_gate_keyboard(
+        circuit_id=circuit_id,
+        total_gates=len(circuit.circuit_history),
+        current_page=page,
+        i18n=i18n,
+        has_measurements=has_measurement_gates
+    )
+
+    await edit_screen(
+        callback,
+        rich_message=InputRichMessage(html=text),
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+# 3. Удаление конкретного гейта
+@circuit_manage_router.callback_query(
+    F.data.regexp(r"^circuits:\d+:edit:delete_gate:confirm:\d+$"),
+    IsCircuitOwner()
+)
+async def circuit_delete_gate_action(
+    callback: CallbackQuery,
+    session: AsyncSession, 
+    i18n: TranslatorRunner,
+    circuit_id: int,
+):
+    gate_idx = int(callback.data.split(":")[-1])
+    
+    circuit = await circuit_repository.get_circuit(
+        session=session, tg_id=callback.from_user.id, circuit_id=circuit_id
+    )
+    
+    # Удаляем гейт из истории
+    if 0 <= gate_idx < len(circuit.circuit_history):
+        circuit.circuit_history.pop(gate_idx)
+        # Сохраняем изменения в БД (используй свой метод обновления или commit)
+        await session.flush()
+        await session.refresh(circuit)
+        
+    # Пересчитываем текущую страницу, чтобы не остаться на пустой странице
+    total_pages = math.ceil(len(circuit.circuit_history) / 10) if circuit.circuit_history else 1
+    current_page = (gate_idx // 10) + 1
+    if current_page > total_pages:
+        current_page = total_pages if total_pages > 0 else 1
+    has_measurement_gates = any(gate[0] == 'M' for gate in circuit.circuit_history)
+    
+    table_html = generate_gates_table_html(circuit.circuit_history, page=current_page)
+    text = i18n.delete_gate_message(
+        circuit_name=circuit.circuit_name,
+        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
+        gates_table=table_html,
+        has_gates='True' if table_html else 'False'
+    )
+    keyboard = builder_delete_gate_keyboard(
+        circuit_id=circuit_id,
+        total_gates=len(circuit.circuit_history),
+        current_page=current_page,
+        i18n=i18n,
+        has_measurements=has_measurement_gates
+    )
+
+    await present(
+        callback, session=session, i18n=i18n, circuit=circuit,
+        html=text, reply_markup=keyboard, circuit_changed=True,
+    )
+    await callback.answer(i18n.delete_gate_success(), show_alert=False)
+
+
+# Хэндлер для удаления всех измерений
+@circuit_manage_router.callback_query(
+    F.data.regexp(r"^circuits:\d+:edit:delete_gate:all_measurements$"),
+    IsCircuitOwner()
+)
+async def circuit_delete_all_measurements(
+    callback: CallbackQuery,
+    session: AsyncSession, 
+    i18n: TranslatorRunner,
+    circuit_id: int,
+):
+    circuit = await circuit_repository.get_circuit(
+        session=session, tg_id=callback.from_user.id, circuit_id=circuit_id
+    )
+    
+    # Удаляем ВСЕ измерения из истории
+    original_len = len(circuit.circuit_history)
+    circuit.circuit_history = [
+        gate for gate in circuit.circuit_history 
+        if gate[0] != 'M'
+    ]
+    removed_count = original_len - len(circuit.circuit_history)
+    
+    # Сохраняем изменения
+    await session.flush()
+    await session.refresh(circuit)
+    
+    # Пересчитываем страницу (теперь гейтов меньше)
+    total_pages = math.ceil(len(circuit.circuit_history) / 10) if circuit.circuit_history else 1
+    current_page = min(1, total_pages) if total_pages > 0 else 1
+    has_measurement_gates = any(gate[0] == 'M' for gate in circuit.circuit_history)
+
+    table_html = generate_gates_table_html(circuit.circuit_history, page=current_page)
+    text = i18n.delete_gate_message(
+        circuit_name=circuit.circuit_name,
+        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
+        gates_table=table_html,
+        has_gates='True' if table_html else 'False'
+    )
+    keyboard = builder_delete_gate_keyboard(
+        circuit_id=circuit_id,
+        total_gates=len(circuit.circuit_history),
+        current_page=current_page,
+        i18n=i18n,
+        has_measurements=has_measurement_gates
+    )
+
+    await present(
+        callback, session=session, i18n=i18n, circuit=circuit,
+        html=text, reply_markup=keyboard, circuit_changed=True,
+    )
+    await callback.answer(
+        i18n.delete_measurements_success(count=removed_count),
+    )
 
 
 # ====================================================================
@@ -1063,31 +1235,11 @@ async def circuit_clear_confirm(
     await session.refresh(circuit)
     
     # Получаем результат последней симуляции (если есть)
-    last_simulation = await circuit_repository.get_last_simulation_circuit(
-        session=session, 
-        circuit_id=circuit_id, 
-    )
-    
-    if last_simulation:
-        state_vector = last_simulation.braket_state
-        has_simulation = 'True'
-    else:
-        state_vector = f'|{"0" * circuit.num_qubits}⟩'
-        has_simulation = 'False'
+    text = await render_circuit_details(session, i18n, circuit)
 
-    # Возвращаемся в управление схемой
-    text = i18n.circuit_details(
-        circuit_name=circuit.circuit_name, 
-        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
-        backend=circuit.backend.name, 
-        state_vector=state_vector,
-        has_simulation=has_simulation, 
-    )
-
-    await callback.message.edit_text(
-        # text=text, 
-        reply_markup=builder_circuit_manage(i18n, circuit_id),
-        rich_message=InputRichMessage(html=text), 
+    await present(
+        callback, session=session, i18n=i18n, circuit=circuit,
+        html=text, reply_markup=builder_circuit_manage(i18n, circuit_id), circuit_changed=True,
     )
     await callback.answer(i18n.circuit_cleared())
 
@@ -1162,11 +1314,22 @@ async def circuit_rename_process(
     session: AsyncSession,
     i18n: TranslatorRunner,
 ):
-    """Обрабатывает новое имя схемы"""
+    """Обрабатывает новое имя схемы с проверкой на уникальность"""
     new_name = message.text.strip()
     
+    # Проверка длины и пустоты
     if not new_name or len(new_name) > 50:
         await message.answer(i18n.circuit_name_invalid())
+        return
+    
+    # Проверка уникальности имени в БД
+    is_unique = await circuit_repository.is_unique_circuit_name(
+        session=session,
+        tg_id=message.from_user.id,
+        name=new_name
+    )
+    if not is_unique:
+        await message.answer(i18n.circuit_name_not_unique())
         return
     
     data = await state.get_data()
@@ -1183,31 +1346,119 @@ async def circuit_rename_process(
     await session.refresh(circuit)
     
     # Получаем результат последней симуляции (если есть)
-    last_simulation = await circuit_repository.get_last_simulation_circuit(
-        session=session, 
-        circuit_id=circuit_id, 
-    )
-    
-    if last_simulation:
-        state_vector = last_simulation.braket_state
-        has_simulation = 'True'
-    else:
-        state_vector = f'|{"0" * circuit.num_qubits}⟩'
-        has_simulation = 'False'
+    text = await render_circuit_details(session, i18n, circuit)
 
-    # Возвращаемся в управление схемой
-    text = i18n.circuit_details(
-        circuit_name=circuit.circuit_name, 
-        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
-        backend=circuit.backend.name, 
-        state_vector=state_vector,
-        has_simulation=has_simulation, 
-    )
-
-    await message.answer_rich(
-        rich_message=InputRichMessage(html=text), 
-        reply_markup=builder_circuit_manage(i18n, circuit_id)
+    await present(
+        message, session=session, i18n=i18n, circuit=circuit,
+        html=text, reply_markup=builder_circuit_manage(i18n, circuit_id), circuit_changed=True,
     )
     await state.set_state(States.circuit_manage)
+
+# ====================================================================
+# ШАГ 6: Экспортирование схемы
+# ====================================================================
+# Хэндлер отвечает за нажатие на кнопку "Экспортировать схему" в Edit-меню 
+@circuit_manage_router.callback_query(
+    F.data.regexp(r"^circuits:\d+:edit:export$"),
+    IsCircuitOwner()
+)
+async def circuit_export_menu(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    i18n: TranslatorRunner,
+    circuit_id: int,
+    user_complexity_level: str,
+):
+    """Показывает меню выбора формата экспорта"""
+    circuit = await circuit_repository.get_circuit(
+        session=session,
+        tg_id=callback.from_user.id,
+        circuit_id=circuit_id
+    )
+    
+    text = i18n.export_menu_text(
+        complexity_level=user_complexity_level, 
+        circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
+        circuit_name=circuit.circuit_name,
+    )
+    
+    await edit_screen(
+        callback,
+        rich_message=InputRichMessage(html=text),
+        reply_markup=builder_export_format_keyboard(circuit_id, i18n)
+    )
+    await callback.answer()
+
+
+# Хэндлер, отвечает за каждый из вариантов экспорта.
+@circuit_manage_router.callback_query(
+    F.data.regexp(r"^circuits:\d+:edit:export:(qasm2|qasm3|ariquantum|qiskit)$"),
+    IsCircuitOwner()
+)
+async def circuit_export_action(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    i18n: TranslatorRunner,
+    circuit_id: int,
+    user_complexity_level: str,
+):
+    """Выполняет экспорт и отправляет файл + код в сообщении"""
+    # Извлекаем формат из callback_data
+    export_format = callback.data.split(":")[-1]
+    
+    circuit = await circuit_repository.get_circuit(
+        session=session,
+        tg_id=callback.from_user.id,
+        circuit_id=circuit_id
+    )
+    user = await user_repository.get_user(session, callback.from_user.id)
+    shots = user.setting.simulation_shots or 100
+    
+    # Выбираем функцию экспорта
+    if export_format == 'qasm2':
+        code = export_to_qasm2(circuit)
+        filename = f"{slugify_filename(circuit.circuit_name)}.qasm"
+        format_name = 'OpenQASM 2.0'
+    elif export_format == 'qasm3':
+        code = export_to_qasm3(circuit)
+        filename = f"{slugify_filename(circuit.circuit_name)}.qasm"
+        format_name = 'OpenQASM 3.0'
+    elif export_format == 'ariquantum':
+        code = export_to_ariquantum(circuit, shots)
+        filename = f"{slugify_filename(circuit.circuit_name)}.py"
+        format_name = 'AriQuantum'
+    elif export_format == 'qiskit':
+        code = export_to_qiskit(circuit, shots)
+        filename = f"{slugify_filename(circuit.circuit_name)}.py"
+        format_name = 'Qiskit'
+    
+    # Формируем сообщение с обрезанным кодом
+    text = i18n.export_success_text(
+        circuit_name=circuit.circuit_name,
+        format_name=format_name,
+        code=code, 
+    )
+    
+    # Создаем файл
+    file = BufferedInputFile(
+        code.encode('utf-8'),
+        filename=filename
+    )
+    
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    # Отправляем файл и текст
+    await callback.message.answer_document(
+        document=file,
+    )
+    await callback.message.answer(
+        text=text,
+        reply_markup=builder_export_result_keyboard(circuit_id, i18n),
+    )
+    
+    await callback.answer(i18n.export_success_alert(), show_alert=False)
 
 

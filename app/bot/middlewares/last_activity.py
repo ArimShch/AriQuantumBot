@@ -25,7 +25,6 @@ class LastActivityMiddleware(BaseMiddleware):
             data: dict[str, Any] 
     ) -> Any:
         user: User = data.get('event_from_user')
-        # print(user)
 
         if user is None:
             return await handler(event, data)
@@ -41,7 +40,6 @@ class LastActivityMiddleware(BaseMiddleware):
                 session=session, 
                 tg_id=user.id
             )
-            # print(1, user_db)
             
             if not user_db:
                 admin_ids = data.get('admin_ids')
@@ -60,7 +58,6 @@ class LastActivityMiddleware(BaseMiddleware):
                     language_code = user.language_code
                 else: 
                     language_code = 'en'
-                # print(2, user_db)
 
                 user_db, user_setting_db = await base_repository.add_user_and_setting(
                     session=session, 
@@ -73,30 +70,32 @@ class LastActivityMiddleware(BaseMiddleware):
                     tg_locate=user.language_code, 
                 )
 
-                # user_db.setting = user_setting_db
-                # await session.commit()
-                # print(4, user_db)
                 state: FSMContext = data["state"]
                 await state.set_state(States.choose_language)
                 data['is_new_user'] = True
             else: 
-                if datetime.now(timezone.utc) - user_db.last_activity > timedelta(minutes=5):
+                current_time_utc = datetime.now(timezone.utc)
+                
+                # Проверяем, изменилась ли дата активности
+                if user_db.last_activity.date() != current_time_utc.date():
+                    # Обновляем все данные из Telegram
+                    user_db.username = user.username
+                    user_db.first_name = user.first_name
+                    user_db.last_name = user.last_name
+                    user_db.tg_locate = user.language_code
+                    # Обновляем last_activity, чтобы не делать лишний запрос к БД
+                    user_db.last_activity = datetime.now() 
+                    
+                    await session.flush()
+                    logger.info("Updated user data on a new day for tg_id=%d", user.id)
+                # Если день тот же, но прошло 5 минут - обновляем только активность
+                elif current_time_utc - user_db.last_activity > timedelta(minutes=5):
                     await user_repository.update_user_last_activity(
                         session=session, 
                         tg_id=user.id
                     )
-                # state: FSMContext = data["state"]
                 data['is_new_user'] = False
 
-            
-            
-            # print('Niddleware:', await state.get_state())
-            
-            # print(1, user_db)
-            # print(2, user_db.setting)
-            # print(3, user_db.setting.language_code)
-            # print(4, user_db.setting.complexity_level.name)
-            # data['user_db'] = user_db
             user_activity_today = await activity_repository.get_activity_today(
                 session=session, tg_id=user.id 
             )
@@ -113,10 +112,3 @@ class LastActivityMiddleware(BaseMiddleware):
             raise
 
         return await handler(event, data)
-
-
-
-        
-
-
-

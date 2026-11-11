@@ -65,7 +65,7 @@ class I18nMiddleware(BaseMiddleware):
             )
 
             data['i18n'] = i18n
-            data['locale'] = user_db.setting.language_code 
+            data['locale'] = user_lang_code 
             data['user_complexity_level'] = user_complexity_level
         except Exception as e:
             await session.rollback()

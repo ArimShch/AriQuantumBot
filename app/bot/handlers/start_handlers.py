@@ -9,6 +9,8 @@ from aiogram.fsm.context import FSMContext
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..handlers.settings_handlers import get_settings_display_values
+
 from ...infrastructure.database.repositories import circuit_repository, user_repository
 from ..states.states import States
 from ..keyboards.settings_keyboards import builder_settings_menu
@@ -19,7 +21,10 @@ from ..keyboards.circuit_manage_keyboards import (
     builder_circuit_apply_gates, 
 )
 from ..utils.draw_circuit import draw_history
+from ..utils.circuit_view import render_circuit_details
+from ..utils.circuit_screen import present, edit_screen
 from ..utils.menu_keyboard import get_main_menu_commands
+from ..utils.formatters_for_admin import format_user_link
 from ...infrastructure.database.models.models import User
 
 
@@ -56,14 +61,29 @@ async def start_bot_handler(
     user_complexity_level: str, 
     is_new_user: bool, 
     session: AsyncSession, 
+    locale: str,
 ):
     if is_new_user:
+        ref_source = command.args
+
         await message.answer(
             text=i18n.choose_language(), 
             reply_markup=builder_choose_language(), 
         )
 
-        ref_source = command.args
+        try:
+            await _notify_admin_about_new_user(
+                bot=bot,
+                admin_id=admin_ids[0],
+                message=message,
+                ref_source=ref_source,
+                locale=locale,
+                i18n=i18n,
+            )
+        except Exception as e:
+            # Логируем ошибку уведомления, но НЕ прерываем основной flow
+            logger.warning(f"Failed to notify admin about new user: {e}")
+
         await user_repository.update_user_ref_source(
             session=session, 
             tg_id=message.from_user.id, 
@@ -203,31 +223,15 @@ async def back_button(
             circuit_id=int(callback.data.split(':')[2])
         )
 
-        last_simulation = await circuit_repository.get_last_simulation_circuit(
-            session=session, 
-            circuit_id=int(callback.data.split(':')[2]), 
-        )
-        if not last_simulation:
-            state_vector = f'|{"0" * circuit.num_qubits}⟩'
-            has_simulation = 'False'
-        else:
-            state_vector = last_simulation.braket_state
-            has_simulation = 'True'
+        # Схема не менялась: в режиме виджета обновится только текст под ним
+        text = await render_circuit_details(session, i18n, circuit)
 
-        text = i18n.circuit_details(
-            circuit_name=circuit.circuit_name, 
-            circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
-            backend=circuit.backend.name,
-            state_vector=state_vector,
-            has_simulation=has_simulation, 
-        )
-
-        await callback.message.edit_text(
-            # text=text, 
-            reply_markup=builder_circuit_manage(
+        await present(
+            callback, session=session, i18n=i18n, circuit=circuit,
+            html=text, reply_markup=builder_circuit_manage(
                 i18n, int(callback.data.split(':')[2])
-            ), 
-            rich_message=InputRichMessage(html=text)
+            ),
+            circuit_changed=False,
         )
         await state.set_state(
             States.circuit_manage, 
@@ -248,8 +252,8 @@ async def back_button(
                 circuit_diagram=draw_history(circuit.num_qubits, circuit.circuit_history),
             )
 
-            await callback.message.edit_text(
-                # text=text, 
+            await edit_screen(
+                callback,
                 reply_markup=builder_circuit_apply_gates(
                     num_qubits=circuit.num_qubits, 
                     circuit_id=circuit.id, 
@@ -260,31 +264,21 @@ async def back_button(
             await state.set_state(States.circuit_manage)
     elif val == 'settings': 
         user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
-        
-        automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no(),
-        qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no(),
-        
-        complexity_levels_en_ru = {
-            'Novice': 'Новичок', 
-            'Student': 'Студент', 
-            'Researcher': 'Исследователь', 
-        }
-        user_level = complexity_levels_en_ru[user_settings.complexity_level.name] if locale == 'ru' else user_settings.complexity_level.name
-
-        text = i18n.settings_menu(
-            language=user_settings.language.emoji + ' ' + user_settings.language.name,
-            complexity=user_settings.complexity_level.emoji + ' ' + user_level,
-            backend=user_settings.backend.name,
-            automatic_name=automatic_name[0],
-            qubit_input_text=qubit_input_text[0],
-            simulation_shots=user_settings.simulation_shots,
-        )
-
+        values = get_settings_display_values(user_settings, i18n, locale)
+    
+        text = i18n.settings_menu(**values)
+    
         await callback.message.edit_text(
             text=text,
-            reply_markup=builder_settings_menu(i18n)
+            reply_markup=builder_settings_menu(i18n), 
         )
         await callback.answer()
+    elif val == 'templates':
+        from ..keyboards.templates_keyboards import builder_templates_list
+        await callback.message.edit_text(
+            rich_message=InputRichMessage(html=i18n.templates_list_title()),
+            reply_markup=builder_templates_list(i18n, locale)
+        ) 
 
 
 # Хэндлер, отвечающий за команду /help
@@ -299,3 +293,56 @@ async def cmnd_help_func(
         rich_message=InputRichMessage(html=i18n.help_message()), 
         reply_markup=builder_help_keyboard(i18n)
     )
+
+
+async def _notify_admin_about_new_user(
+    bot: Bot,
+    admin_id: int,
+    message: Message,
+    ref_source: str | None,
+    locale: str,
+    i18n: TranslatorRunner,
+) -> None:
+    """Отправляет админу уведомление о новом пользователе."""
+    user = message.from_user
+    
+    # Собираем всю информацию
+    user_link = format_user_link((user.id, user.username, user.first_name, user.last_name))  # твоя функция
+    user_id = str(user.id)
+    username = f"@{user.username}" if user.username else "—"
+    full_name = user.full_name or "—"
+    source_display = ref_source if ref_source else 'direct'
+    
+    # Флаги языков (опционально, для красоты)
+    lang_flag = {
+        'ru': '🇷🇺',
+        'en': '🇬🇧', 
+        'uk': '🇺🇦',
+        'by': '🇧🇾',
+        'de': '🇩🇪',
+        'fr': '🇫🇷',
+        'es': '🇪🇸',
+        'it': '🇮🇹',
+        'cn': '🇨🇳',
+        'jp': '🇯🇵',
+    }.get(locale.lower(), '🌍')
+    
+    text = i18n.admin_new_user_notification(
+        user_link=user_link,
+        user_id=user_id,
+        username=username,
+        full_name=full_name,
+        source=source_display,
+        locale_flag=lang_flag,
+        locale_code=locale or "—",
+    )
+
+    try:
+        await bot.send_message(
+            chat_id=admin_id,
+            text=text,
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        # Админ заблокировал бота или бот не может писать админу
+        logger.warning(f"Cannot notify admin {admin_id}: bot is blocked or not started")

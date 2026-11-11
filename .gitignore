@@ -1,3 +1,6 @@
 .env
 .venv
 .VSCodeCounter
+__pycache__/
+*.pyc
+*.rar

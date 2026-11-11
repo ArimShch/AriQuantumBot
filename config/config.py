@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class BotSettings:
     token: str
     admin_ids: list[int]
+    proxy_url: str | None = None
 
 @dataclass
 class DatabaseSettings:
@@ -40,7 +41,8 @@ def load_config():
 
     bot = BotSettings(
         token=env('BOT_TOKEN'),
-        admin_ids=[1781068617]
+        admin_ids=env.list('ADMIN_IDS', subcast=int),
+        proxy_url=env.str('PROXY_URL', default=None) or None,
     )
 
     db = DatabaseSettings(

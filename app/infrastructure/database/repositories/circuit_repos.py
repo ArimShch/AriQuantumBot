@@ -25,14 +25,13 @@ class CircuitRepository:
             tg_id: int, 
             circuit_name: str, 
             num_qubits: int, 
-            backend_id: int, 
-            session: AsyncSession,
+            session: AsyncSession, # УБРАНО: backend_id
     ):
         circuit = QuantumCircuit(
             user_id=tg_id, 
             circuit_name=circuit_name, 
             num_qubits=num_qubits, 
-            backend_id=backend_id, 
+            # backend_id убрано
         )
         session.add(circuit)
         await session.flush()
@@ -165,11 +164,13 @@ class CircuitRepository:
         
         return list(measured_qubits) 
 
+
     async def create_simulation_result(
         self,
         session: AsyncSession,
         tg_id: int, 
         circuit_id: int,
+        backend_id: int, # ДОБАВЛЕНО: backend_id
         braket_state: str,
         counts,
         execution_time: float,
@@ -179,6 +180,7 @@ class CircuitRepository:
         simulation = QuantumSimulation(
             user_id=tg_id, 
             circuit_id=circuit_id,
+            backend_id=backend_id, # ДОБАВЛЕНО
             braket_state=braket_state,
             counts=counts,
             execution_time=execution_time,

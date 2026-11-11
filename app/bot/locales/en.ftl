@@ -27,12 +27,33 @@ back_button = ⬅️ Back
 menu_circuit_button = ⛓️ My Circuits
 menu_profile_button = 👤 Profile
 menu_settings_button = ⚙️ Settings
-    
+menu_template_button = 🗃️ Templates
+
+templates_list_title = 
+    🗃️ <b>Templates</b>
+    <br><br>
+    Here are classic quantum algorithms and states. You can explore them and use them as a base for your own circuits.
+    <br><br>
+    ℹ️ Select a template below:
+
+template_details = 
+    🗃️ <b>Templates: { $name }</b>
+    <br><br>
+    { $description }
+    <br>
+    <pre>{ $circuit_diagram }</pre>
+    <br>
+    ℹ️ Click the <b>"➕ Create circuit"</b> button below to create your own circuit based on this algorithm.
+
+template_not_found = ❌ Template not found
+
+template_create_btn = ➕ Create circuit 
+
 input_circuit_name = 
     { $complexity_level ->
         [Novice] Give your quantum circuit a name and send it (e.g., "My first circuit").
         [Student] Provide a name circuit (this will help you find it later).
-        [Searcher] Provide a unique name for the circuit.
+        [Researcher] Provide a unique name for the circuit.
        *[default] Enter circuit name:
     }
 
@@ -42,7 +63,7 @@ input_num_qubits_text =
             🔢 How many qubits will your circuit have?  
             Send a number from 1 to { $num_qubits }. Example: "3".
         [Student] Specify the number of qubits (1–{ $num_qubits }):
-        [Searcher] Set the number of qubits (max { $num_qubits }):
+        [Researcher] Set the number of qubits (max { $num_qubits }):
        *[default] Specify the number of qubits (1–{ $num_qubits }):
     }
 
@@ -52,7 +73,7 @@ input_num_qubits_keyboard =
             🔢 How many qubits will your circuit have?  
             Tap the button with the desired number (1 to { $num_qubits }).  
         [Student] Choose the number of qubits:
-        [Searcher] Specify the number of qubits:
+        [Researcher] Specify the number of qubits:
        *[default] Choose the number of qubits:
     }
 
@@ -83,8 +104,6 @@ circuit_details =
     <br>
     <pre>{ $circuit_diagram }</pre>
     <br>
-    Backend: <b>{ $backend }</b>
-    <br><br>
     { $has_simulation ->
         [True] Result of the last simulation:
         [False] Current state (before simulation):
@@ -142,10 +161,82 @@ circuit_edit_menu =
     <br>
     <pre>{ $circuit_diagram }</pre>
     <br>
-    ℹ️ Choose an action:
+    ℹ️ Choose an action:ㅤㅤㅤㅤ
 
 circuit_rename_prompt = Enter a new name for the quantum circuit (max 50 characters):
 circuit_name_invalid = ❌ Invalid name! Name must not be empty and exceed 50 characters.
+circuit_name_not_unique = ❌ A circuit with this name already exists! Please choose another one.
+
+delete_gate_message = 
+    { $has_gates ->
+        [True]  <b>{ $circuit_name }</b>
+                <br>
+                <pre>{ $circuit_diagram }</pre>
+                <br>
+                Applied gates history:
+                { $gates_table }
+                ℹ️ Select the gate number to delete.
+        [False] <b>{ $circuit_name }</b>
+                <br>
+                <pre>{ $circuit_diagram }</pre>
+                <br>
+                ℹ️ History is empty. No gates to delete.
+        *[default]  <b>{ $circuit_name }</b>
+                    <br>
+                    <pre>{ $circuit_diagram }</pre>
+                    <br>
+                    Applied gates history:
+                    { $gates_table }
+                    ℹ️ Select the gate number to delete.
+    }
+
+export_menu_text = 
+    { $complexity_level -> 
+        [Researcher] 
+                <b>{ $circuit_name }</b>
+                <br>
+                <pre>{ $circuit_diagram }</pre>
+                <br>
+                ℹ️ Choose export format:
+        *[default]
+                <b>{ $circuit_name }</b>
+                <br>
+                <pre>{ $circuit_diagram }</pre>
+                <br>
+                • 🔹 <b>OpenQASM 2.0</b> — .qasm file with declarative circuit description. Supported by many quantum platforms<br>
+                • 🔸 <b>OpenQASM 3.0</b> — Modern .qasm format with extended syntax (functions, loops, classical operations)<br>
+                • 🐍 <b>AriQuantum</b> — .py file with Python code using the ariquantum library<br>
+                • 🐍 <b>Qiskit</b> — .py file with Python code using qiskit and qiskit_aer
+                <br><br>
+                ℹ️ Choose export format:
+    }
+
+
+export_success_text =
+    { $format_name ->
+        [AriQuantum]
+            📤 <b>Export of "{ $circuit_name }"</b>
+    
+            🔄 Format: <b>{ $format_name }</b>
+
+            <pre><code class="language-python">{ $code }</code></pre>
+        [Qiskit]
+            📤 <b>Export of "{ $circuit_name }"</b>
+    
+            🔄 Format: <b>{ $format_name }</b>
+            
+            <blockquote expandable>⚠️ In Qiskit, measurement results (basis states of the state vector and individual shot outcomes) are written to classical bits in the reverse order relative to qubits. For example, the state |110⟩ means: q₂=1, q₁=1, q₀=0 → classical result "110".
+            
+            In AriQuantum (both in the Python library and Telegram bot), |110⟩ is read as |q₀q₁q₂⟩ (q₀=1, q₁=1, q₂=0). This isn't a bug — just different conventions: AriQuantum uses big-endian (human-intuitive), while Qiskit uses little-endian (like classical numbers).
+            </blockquote>
+            <pre><code class="language-python">{ $code }</code></pre>
+        *[default]
+            📤 <b>Export of "{ $circuit_name }"</b>
+    
+            🔄 Format: <b>{ $format_name }</b>
+
+            <pre>{ $code }</pre>
+    }
 
 
 # Statuses
@@ -157,18 +248,26 @@ circuit_deleted = Circuit deleted! 🗑️
 measurement_applied_single = Measurement applied! 📏
 measurement_applied_multiple = Measurement applied to { $count } qubits! 📏
 gate_cannot_be_applied_to_measured_qubits = ❌ Quantum gate "{ $gate_name }" cannot be applied to measured qubits.
+delete_gate_success = ✅ Gate successfully deleted from the circuit.
+delete_measurements_success = ✅ Removed { $count } measurements. 
+export_success_alert = ✅ Circuit exported successfully!
 
 
 # Buttons
 circuit_edit_clear_button = 🧹 Clear circuit
 circuit_edit_delete_button = 🗑️ Delete circuit
 circuit_edit_rename_button = ✏️ Rename
+circuit_edit_export_button = 📤 Export circuit
 reset_qubit_selection = 🔄 Cancel selection
 circuit_apply_gate_button = ➕ Apply gate
 circuit_edit_button = 📋 Edit circuit
 circuit_simulate_button = 🚀 Run simulation
+gate_measure_btn = 📏 Measure
 measure_all_qubits_button = 📏 Measure all qubits
+circuit_edit_delete_gate_button = ✂️ Delete gate
+delete_all_measurements_button = Remove all measurements
 
+settings_ask_at_runtime = ❓ Choose at runtime
 
 error_input_circuit_name = 
     An error has occurred! Please send a <b>text message</b> with the unique circuit name.  
@@ -183,7 +282,7 @@ error_num_qubits_invalid =
 
 error_input_num_qubits = 
     Invalid input.  
-    Please enter a number from 1 to { $max_qubits } — this is the maximum number of qubits supported by the selected backend.
+    Please enter a number from 1 to { $max_qubits } (this is the maximum number of qubits per circuit).
     
 
 test = OK
@@ -198,6 +297,7 @@ settings_menu =
     🤖 Automatic circuit naming: <b>{ $automatic_name }</b>
     🔢 Text input for qubits: <b>{ $qubit_input_text }</b>
     📊 Simulation shots: <b>{ $simulation_shots }</b>
+    🖼 Charts format: <b>{ $output_mode }</b>
 
 settings_language_button = 🌐 Language
 settings_complexity_button = 🎓 Complexity level
@@ -205,6 +305,20 @@ settings_backend_button = 💻 Backend
 settings_automatic_name_button = 🤖 Automatic circuit naming
 settings_qubit_input_text_button = 🔢 Text input for qubits
 settings_simulation_shots_button = 📊 Simulation shots
+
+settings_output_mode_button = 🖼 Output format
+
+settings_output_mode_menu = 
+    🖼 <b>Charts and circuits output format</b>
+
+    🧩 <b>HTML widget</b> — a nice interactive chart right in the message (private chat with the bot only).
+    🔤 <b>ASCII text</b> — plain text output that works everywhere.
+
+    ℹ️ Current format: { $current }
+
+settings_output_mode_widget = 🧩 HTML widget
+settings_output_mode_ascii = 🔤 ASCII text
+settings_output_mode_updated = 🖼 Output format updated!
 
 settings_language_menu = 
     🌐 <b>Language Selection</b>
@@ -260,12 +374,23 @@ settings_simulation_shots_updated = 📊 Number of shots updated!
 settings_automatic_name_updated = 🤖 Automatic circuit naming updated!
 settings_qubit_input_text_updated = 🔢 Qubit input mode updated!
 
+simulation_select_backend = 
+    💻 <b>Please select a backend for this simulation:</b>
+    <br><br>
+    • <b>AriQuantum</b> — faster for simple circuits (up to 6 qubits).
+    • <b>Qiskit</b> — IBM standard, supports complex circuits up to 10 qubits.
+
+simulation_select_shots = 
+    📊 <b>Please select the number of simulation shots:</b>
+
+simulation_forced_qiskit = ℹ️ Circuit has > 6 qubits, so the simulation was forced to use the <b>Qiskit</b> backend.<br><br>
+
 simulation_result_with_measurements = 
     🚀 <b>Circuit Simulation "{ $circuit_name }"</b>
     <br>
     <pre>{ $circuit_diagram }</pre>
     <br>
-    💻 Backend used: <b>{ $backend }</b><br>
+    { $forced_warning }💻 Backend used: <b>{ $backend }</b><br>
     ⏱️ Execution time: <b>{ $execution_time } sec</b>
     <br><br>
     📌 <b>State before first measurement:</b>
@@ -279,11 +404,35 @@ simulation_result_without_measurements =
     <br>
     <pre>{ $circuit_diagram }</pre>
     <br>
-    💻 Backend used: <b>{ $backend }</b><br>
+    { $forced_warning }💻 Backend used: <b>{ $backend }</b><br>
     ⏱️ Execution time: <b>{ $execution_time } sec</b>
     <br><br>
     📌 <b>State vector:</b>
     <pre>{ $braket_state }</pre>
+
+simulation_result_with_measurements_widget = 
+    🚀 <b>Circuit Simulation "{ $circuit_name }"</b>
+    <br>
+    <pre>{ $circuit_diagram }</pre>
+    <br>
+    { $forced_warning }💻 Backend used: <b>{ $backend }</b><br>
+    ⏱️ Execution time: <b>{ $execution_time } sec</b>
+    <br><br>
+    📌 <b>State before first measurement:</b>
+    <pre>{ $braket_state }</pre>
+
+simulation_widget_detail_count = Occurred
+simulation_widget_detail_of = of
+simulation_widget_detail_share = Share
+simulation_widget_detail_qubits = Qubits
+
+simulation_widget_title = 📊 <b>Results of { $shots } shots</b>
+
+simulation_widget_hidden_note = ℹ️ Showing the { $shown } most frequent states out of { $total }
+
+simulation_counts_fallback = 
+    📊 <b>Results of { $shots } shots:</b>
+    <pre>{ $counts }</pre>
 
 simulation_back_to_circuit_button = ◀️ Back to circuit
 simulation_error = ❌ Error during circuit simulation!
@@ -309,16 +458,19 @@ command_admin =
 
     ℹ️ Select an_action below:
 
-admin_users_btn = Statistics: «👤 Users»
-admin_circuits_btn = Statistics: «⛓️ Circuits»
-admin_backends_btn = Statistics: «💻 Backends»
+admin_users_btn = 👥 Users
+admin_circuits_btn = ⛓️ Circuits
+admin_backends_btn = 💻 Backends
 admin_blocked_btn = ❌ Block user
 admin_message_btn = 📩 Send a message
-admin_stat_btn = Statistics: «📊 Settings»
+admin_stat_btn = 📊 Settings
 admin_menu_btn = ⏪ Admin menu
+admin_users_activity_btn = 📊 User activity
+admin_user_search_btn = 🔍 User search
+admin_users_new_stats_btn = 📈 Daily statistics
 
 admin_users = 
-    <b>Statistics: «👤 Users»</b>
+    <b>Statistics: «👥 Users»</b>
 
     <b>TOTAL users:</b> 👥 { $all_users }
 
@@ -351,9 +503,6 @@ admin_circuits =
 
 admin_backends = 
     <b>Statistics: «💻 Backends»</b>
-
-    <b>⛓️ Circuits:</b>
-    { $backends_circuits_text }
 
     <b>🚀 Simulations:</b>
     { $backends_simulations_text }
@@ -438,11 +587,101 @@ help_message =
     ℹ️ Use the menu or commands to navigate.
 
 admin_broadcast_prompt = 
-    📢 Enter the broadcast message for all users. 
-    The message will be automatically sent to each user.
+    📢 Enter the broadcast message (Formatting is done through html tags) for all users in <b>RUSSIAN</b>:
+
+admin_broadcast_prompt_en = 
+    🇬🇧 Great. Now enter the broadcast message in <b>ENGLISH</b>:
 
 admin_broadcast_started = 
     🚀 Broadcast started in background. You'll receive a report when done.
 
 admin_broadcast_empty = 
     ❌ Broadcast message cannot be empty.
+
+# =============== NEW ================
+
+admin_new_user_notification = 
+    🆕 <b>New User</b>
+
+    👤 { $user_link }
+
+    🆔 ID: <b>{ $user_id }</b>
+    📛 Username: { $username }
+    📝 Full name: <b>{ $full_name }</b>
+    🔗 Source: <b>{ $source }</b>
+    { $locale_flag } Telegram language: <b>{ $locale_code }</b>
+
+admin_new_circuit_notification = 
+    ⚛️ <b>New Circuit</b>
+
+    Circuit "{ $circuit_name }" was created by { $user } with { $num_qubits } qubits.
+
+admin_user_search_prompt = 
+    🔍 <b>User Search</b>
+
+    Send the ID, username, first name, or last name of the user.
+
+admin_user_search_empty = ❌ The query cannot be empty.
+
+admin_user_not_found = ❌ User matching "<code>{ $query }</code>" was not found.
+
+admin_user_block_btn = 🚫 Block
+admin_user_unblock_btn = ✅ Unblock
+
+admin_user_status_blocked = blocked
+admin_user_status_active = unblocked
+
+admin_user_block_toggled = ✅ User has been { $status }.
+
+admin_user_profile = 
+    { $role_emoji } <b>User Profile</b>
+    <br><br>
+    🆔 ID: { $user_id }<br>
+    📛 Username: { $username }<br>
+    📝 Name: { $first_name } { $last_name }<br>
+    { $is_blocked ->
+        [true] 🚫 Status: <b>Blocked</b>
+       *[other] ✅ Status: <b>Active</b>
+    }<br>
+    📅 Joined: { $date_joined }<br>
+    🕐 Last activity: { $last_activity }<br>
+    🔗 Source: { $ref_source }<br>
+    🌍 Telegram language: { $tg_locate }<br>
+    <br>
+    <b>⚙️ Settings:</b><br>
+    🌐 Language: { $language }<br>
+    🎓 Complexity: { $complexity }<br>
+    💻 Backend: { $backend }<br>
+    🔢 Shots: { $shots }<br>
+    🤖 Auto-name circuit: { $automatic_name }<br>
+    🔢 Text input for qubits: { $qubit_input_text }<br>
+    <br>
+    <b>📐 Circuits:</b><br>
+    • Total created: { $total_circuits_created }<br>
+    • Currently in DB: { $circuits_count }<br>
+    { $circuits_list }<br>
+    { $circuits_more ->
+        [0] { "" }
+       *[other] <i>... and { $circuits_more } more circuits</i>
+    }<br>
+    <b>🧪 Simulations:</b><br>
+    • Total run: { $total_simulations_run }<br>
+    • Currently in DB: { $simulations_count }<br>
+    <b>By backends:</b><br>
+    { $backend_stats_list }<br>
+    <b>Overall:</b><br>
+    • Avg qubits: { $overall_avg_qubits }<br>
+    • Avg time: { $overall_avg_time }<br>
+    <br>
+    <b>📊 Activity:</b><br>
+    • Days active: { $activity_count }<br>
+    { $activity_list }<br>
+    { $activity_more ->
+        [0] { "" }
+       *[other] <i>... and { $activity_more } more days</i>
+    }
+
+admin_users_new_stats_text =
+    📈 <b>New users by day:</b>
+    
+    { $stats_list }

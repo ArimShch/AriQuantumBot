@@ -17,11 +17,41 @@ from ..keyboards.settings_keyboards import (
     builder_complexity_menu,
     builder_backend_menu,
     builder_simulation_shots, 
+    builder_output_mode_menu,
 )
-
 
 logger = logging.getLogger(__name__)
 settings_router = Router()
+
+
+def get_settings_display_values(user_settings, i18n: TranslatorRunner, locale: str):
+    """Вспомогательная функция для формирования отображаемых значений настроек"""
+    automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no()
+    qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no()
+    
+    complexity_levels_en_ru = {
+        'Novice': 'Новичок', 
+        'Student': 'Студент', 
+        'Researcher': 'Исследователь', 
+    }
+    user_level = complexity_levels_en_ru[user_settings.complexity_level.name] if locale == 'ru' else user_settings.complexity_level.name
+
+    backend_display = user_settings.backend.name if user_settings.backend else i18n.settings_ask_at_runtime()
+    shots_display = str(user_settings.simulation_shots) if user_settings.simulation_shots else i18n.settings_ask_at_runtime()
+
+    return {
+        'language': f"{user_settings.language.emoji} {user_settings.language.name}",
+        'complexity': f"{user_settings.complexity_level.emoji} {user_level}",
+        'backend': backend_display,
+        'automatic_name': automatic_name,
+        'qubit_input_text': qubit_input_text,
+        'simulation_shots': shots_display,
+        'output_mode': (
+            i18n.settings_output_mode_widget()
+            if user_settings.output_mode == 'widget'
+            else i18n.settings_output_mode_ascii()
+        ),
+    }
 
 
 # Главное меню настроек
@@ -32,32 +62,14 @@ async def settings_menu(
     i18n: TranslatorRunner,
     locale: str, 
 ):
-    """Показывает главное меню настроек"""
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
-    
-    automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no(),
-    qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no(),
-    
-    complexity_levels_en_ru = {
-        'Novice': 'Новичок', 
-        'Student': 'Студент', 
-        'Researcher': 'Исследователь', 
-    }
-    user_level = complexity_levels_en_ru[user_settings.complexity_level.name] if locale == 'ru' else user_settings.complexity_level.name
+    values = get_settings_display_values(user_settings, i18n, locale)
 
-    text = i18n.settings_menu(
-        language=user_settings.language.emoji + ' ' + user_settings.language.name,
-        complexity=user_settings.complexity_level.emoji + ' ' + user_level,
-        backend=user_settings.backend.name,
-        automatic_name=automatic_name[0],
-        qubit_input_text=qubit_input_text[0],
-        simulation_shots=str(user_settings.simulation_shots),
-    )
+    text = i18n.settings_menu(**values)
 
     await callback.message.edit_text(
         text=text,
         reply_markup=builder_settings_menu(i18n), 
-        # rich_message=InputRichMessage(html=text)
     )
     await callback.answer()
 
@@ -69,22 +81,16 @@ async def settings_language_menu(
     session: AsyncSession,
     i18n: TranslatorRunner,
 ):
-    """Показывает меню выбора языка"""
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
-    
     languages = await base_repository.get_languages(session)
     
     text = i18n.settings_language_menu(
-        current=user_settings.language.emoji + ' ' + user_settings.language.name
+        current=f"{user_settings.language.emoji} {user_settings.language.name}"
     )
     
     await callback.message.edit_text(
         text=text,
-        reply_markup=builder_language_menu(
-            languages, 
-            user_settings.language_code, 
-            i18n,
-        )
+        reply_markup=builder_language_menu(languages, user_settings.language_code, i18n)
     )
     await callback.answer()
 
@@ -95,27 +101,17 @@ async def settings_language_select(
     callback: CallbackQuery,
     session: AsyncSession,
     i18n: TranslatorRunner,
+    locale: str,
 ):
-    """Обрабатывает выбор языка"""
     language_code = callback.data.split(":")[2]
     
-    # Обновляем настройки пользователя
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
     user_settings.language_code = language_code
     await session.flush()
     await session.refresh(user_settings)
     
-    automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no(),
-    qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no(),
-    
-    text = i18n.settings_menu(
-        language=user_settings.language.emoji + ' ' + user_settings.language.name,
-        complexity=user_settings.complexity_level.emoji + ' ' + user_settings.complexity_level.name,
-        backend=user_settings.backend.name,
-        automatic_name=automatic_name[0],
-        qubit_input_text=qubit_input_text[0],
-        simulation_shots=str(user_settings.simulation_shots),
-    )
+    values = get_settings_display_values(user_settings, i18n, locale)
+    text = i18n.settings_menu(**values)
 
     await callback.message.edit_text(
         text=text,
@@ -132,23 +128,14 @@ async def settings_complexity_menu(
     i18n: TranslatorRunner,
     locale: str, 
 ):
-    """Показывает меню выбора уровня сложности"""
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
-
     complexity_levels = await base_repository.get_complexity_level(session)
     
-    complexity_levels_en_ru = {
-        'Novice': 'Новичок', 
-        'Student': 'Студент', 
-        'Researcher': 'Исследователь', 
-    }
-
-    user_level = complexity_levels_en_ru[user_settings.complexity_level.name] if locale == 'ru' else user_settings.complexity_level.name
-
-    text = i18n.settings_complexity_menu(current=user_settings.complexity_level.emoji + ' ' + user_level)
+    values = get_settings_display_values(user_settings, i18n, locale)
+    
+    text = i18n.settings_complexity_menu(current=values['complexity'])
     
     await callback.message.edit_text(
-        # text=text,
         reply_markup=builder_complexity_menu(complexity_levels, user_settings.complexity_level_id, i18n, locale),
         rich_message=InputRichMessage(html=text),
     )
@@ -163,7 +150,6 @@ async def settings_complexity_select(
     i18n: TranslatorRunner,
     locale: str,
 ):
-    """Обрабатывает выбор уровня сложности"""
     complexity_id = int(callback.data.split(":")[2])
     
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
@@ -171,26 +157,8 @@ async def settings_complexity_select(
     await session.flush()
     await session.refresh(user_settings)
 
-    automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no(),
-    qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no(),
-
-    complexity_levels_en_ru = {
-        'Novice': 'Новичок', 
-        'Student': 'Студент', 
-        'Researcher': 'Исследователь', 
-    }
-
-    user_level = complexity_levels_en_ru[user_settings.complexity_level.name] if locale == 'ru' else user_settings.complexity_level.name
-
-
-    text = i18n.settings_menu(
-        language=user_settings.language.emoji + ' ' + user_settings.language.name,
-        complexity=user_settings.complexity_level.emoji + ' ' + user_level,
-        backend=user_settings.backend.name,
-        automatic_name=automatic_name[0],
-        qubit_input_text=qubit_input_text[0],
-        simulation_shots=str(user_settings.simulation_shots),
-    )
+    values = get_settings_display_values(user_settings, i18n, locale)
+    text = i18n.settings_menu(**values)
 
     await callback.message.edit_text(
         text=text,
@@ -206,50 +174,41 @@ async def settings_backend_menu(
     session: AsyncSession,
     i18n: TranslatorRunner,
 ):
-    """Показывает меню выбора бэкенда"""
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
-    
     backends = await base_repository.get_backends(session)
     
+    backend_display = user_settings.backend.name if user_settings.backend else i18n.settings_ask_at_runtime()
+    
     text = i18n.settings_backend_menu(
-        current=user_settings.backend.name,
+        current=backend_display,
         complexity_level=user_settings.complexity_level.name 
     )
     
     await callback.message.edit_text(
-        # text=text,
         reply_markup=builder_backend_menu(backends, user_settings.backend_id, i18n), 
         rich_message=InputRichMessage(html=text)
     )
     await callback.answer()
 
 
-# Выбор бэкенда
+# Выбор бэкенда (конкретный или 'ask')
 @settings_router.callback_query(F.data.startswith("settings:backend:"))
 async def settings_backend_select(
     callback: CallbackQuery,
     session: AsyncSession,
     i18n: TranslatorRunner,
+    locale: str,
 ):
-    """Обрабатывает выбор бэкенда"""
-    backend_id = int(callback.data.split(":")[2])
+    backend_val = callback.data.split(":")[2]
+    backend_id = None if backend_val == 'ask' else int(backend_val)
     
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
     user_settings.backend_id = backend_id
     await session.flush()
     await session.refresh(user_settings)
     
-    automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no(),
-    qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no(),
-
-    text = i18n.settings_menu(
-        language=user_settings.language.emoji + ' ' + user_settings.language.name,
-        complexity=user_settings.complexity_level.emoji + ' ' + user_settings.complexity_level.name,
-        backend=user_settings.backend.name,
-        automatic_name=automatic_name[0],
-        qubit_input_text=qubit_input_text[0],
-        simulation_shots=str(user_settings.simulation_shots),
-    )
+    values = get_settings_display_values(user_settings, i18n, locale)
+    text = i18n.settings_menu(**values)
 
     await callback.message.edit_text(
         text=text,
@@ -264,24 +223,15 @@ async def settings_toggle_automatic_name(
     callback: CallbackQuery,
     session: AsyncSession,
     i18n: TranslatorRunner,
+    locale: str,
 ):
-    """Переключает автоматическое имя схемы"""
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
     user_settings.automatic_name = not user_settings.automatic_name
     await session.flush()
     await session.refresh(user_settings)
     
-    automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no(),
-    qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no(),
-
-    text = i18n.settings_menu(
-        language=user_settings.language.emoji + ' ' + user_settings.language.name,
-        complexity=user_settings.complexity_level.emoji + ' ' + user_settings.complexity_level.name,
-        backend=user_settings.backend.name,
-        automatic_name=automatic_name[0],
-        qubit_input_text=qubit_input_text[0],
-        simulation_shots=str(user_settings.simulation_shots),
-    )
+    values = get_settings_display_values(user_settings, i18n, locale)
+    text = i18n.settings_menu(**values)
 
     await callback.message.edit_text(
         text=text,
@@ -296,24 +246,15 @@ async def settings_toggle_qubit_input_text(
     callback: CallbackQuery,
     session: AsyncSession,
     i18n: TranslatorRunner,
+    locale: str,
 ):
-    """Переключает ввод количества кубитов текстом"""
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
     user_settings.qubit_input_text = not user_settings.qubit_input_text
     await session.flush()
     await session.refresh(user_settings)
     
-    automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no(),
-    qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no(),
-
-    text = i18n.settings_menu(
-        language=user_settings.language.emoji + ' ' + user_settings.language.name,
-        complexity=user_settings.complexity_level.emoji + ' ' + user_settings.complexity_level.name,
-        backend=user_settings.backend.name,
-        automatic_name=automatic_name[0],
-        qubit_input_text=qubit_input_text[0],
-        simulation_shots=str(user_settings.simulation_shots),
-    )
+    values = get_settings_display_values(user_settings, i18n, locale)
+    text = i18n.settings_menu(**values)
 
     await callback.message.edit_text(
         text=text,
@@ -329,10 +270,10 @@ async def settings_simulation_shots_menu(
     session: AsyncSession,
     i18n: TranslatorRunner,
 ):
-    """Показывает меню настройки количества запусков"""
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
+    shots_display = str(user_settings.simulation_shots) if user_settings.simulation_shots else i18n.settings_ask_at_runtime()
     
-    text = i18n.settings_simulation_shots_menu(current=str(user_settings.simulation_shots))
+    text = i18n.settings_simulation_shots_menu(current=shots_display)
     
     await callback.message.edit_text(
         text=text,
@@ -344,32 +285,24 @@ async def settings_simulation_shots_menu(
     await callback.answer()
 
 
-# Выбор количества запусков
+# Выбор количества запусков (число или 'ask')
 @settings_router.callback_query(F.data.startswith("settings:simulation_shots:"))
 async def settings_simulation_shots_select(
     callback: CallbackQuery,
     session: AsyncSession,
     i18n: TranslatorRunner,
+    locale: str,
 ):
-    """Обрабатывает выбор количества запусков"""
-    shots = int(callback.data.split(":")[2])
+    shots_val = callback.data.split(":")[2]
+    shots = None if shots_val == 'ask' else int(shots_val)
     
     user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
     user_settings.simulation_shots = shots
     await session.flush()
     await session.refresh(user_settings)
     
-    automatic_name = i18n.bool_yes() if user_settings.automatic_name else i18n.bool_no(),
-    qubit_input_text = i18n.bool_yes() if user_settings.qubit_input_text else i18n.bool_no(),
-
-    text = i18n.settings_menu(
-        language=user_settings.language.emoji + ' ' + user_settings.language.name,
-        complexity=user_settings.complexity_level.emoji + ' ' + user_settings.complexity_level.name,
-        backend=user_settings.backend.name,
-        automatic_name=automatic_name[0],
-        qubit_input_text=qubit_input_text[0],
-        simulation_shots=str(user_settings.simulation_shots),
-    )
+    values = get_settings_display_values(user_settings, i18n, locale)
+    text = i18n.settings_menu(**values)
 
     await callback.message.edit_text(
         text=text,
@@ -378,3 +311,44 @@ async def settings_simulation_shots_select(
     await callback.answer(i18n.settings_simulation_shots_updated())
 
 
+# Меню выбора формата вывода графиков и схем
+@settings_router.callback_query(F.data == "settings:output_mode")
+async def settings_output_mode_menu(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    i18n: TranslatorRunner,
+    locale: str,
+):
+    user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
+    values = get_settings_display_values(user_settings, i18n, locale)
+
+    await callback.message.edit_text(
+        text=i18n.settings_output_mode_menu(current=values['output_mode']),
+        reply_markup=builder_output_mode_menu(user_settings.output_mode, i18n),
+    )
+    await callback.answer()
+
+
+# Выбор формата вывода ('widget' или 'ascii')
+@settings_router.callback_query(F.data.regexp(r"^settings:output_mode:(widget|ascii)$"))
+async def settings_output_mode_select(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    i18n: TranslatorRunner,
+    locale: str,
+):
+    output_mode = callback.data.split(":")[2]
+
+    user_settings = await user_repository.get_user_settings(session, callback.from_user.id)
+    user_settings.output_mode = output_mode
+    await session.flush()
+    await session.refresh(user_settings)
+
+    values = get_settings_display_values(user_settings, i18n, locale)
+    text = i18n.settings_menu(**values)
+
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=builder_settings_menu(i18n)
+    )
+    await callback.answer(i18n.settings_output_mode_updated())

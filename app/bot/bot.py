@@ -18,11 +18,13 @@ from .handlers.simulation_handlers import simulation_router
 from .handlers.profile_handlers import profile_router
 from .handlers.admin_handlers import admin_router
 from .handlers.last_handlers import last_router
+from .handlers.templates_handlers import templates_router
 from .middlewares.throttling import ThrottlingMiddleware
 from .middlewares.database import DBSessionMiddleware
 from .middlewares.last_activity import LastActivityMiddleware
 from .middlewares.blocked import BlockMiddleware
 from .middlewares.i18n import I18nMiddleware
+from .utils.circuit_screen import CircuitWidgetCleanupMiddleware
 from config.config import Config
 from app.infrastructure.database.init_db import init_db
 from app.infrastructure.database.connection import engine, get_session_factory
@@ -38,9 +40,9 @@ async def main(config: Config) -> None:
     if not await init_db(engine, session_factory):
         logger.info("Bot can't work without bd")
 
-    PROXY_URL = "http://127.0.0.1:7890"
+    # Прокси необязателен: задаётся через PROXY_URL в .env
     session = AiohttpSession(
-        proxy=PROXY_URL,
+        proxy=config.bot.proxy_url,
         timeout=30.0
     )
 
@@ -59,7 +61,7 @@ async def main(config: Config) -> None:
     dp.include_routers(
         start_router, create_circuit_router, circuit_manage_router, 
         settings_router, simulation_router, profile_router, admin_router, 
-        last_router, 
+        last_router, templates_router,
     )
 
     logger.info('Including middlewares...')
@@ -68,6 +70,8 @@ async def main(config: Config) -> None:
     dp.update.middleware(LastActivityMiddleware())
     dp.update.middleware(BlockMiddleware())
     dp.update.middleware(I18nMiddleware(hub))
+    # Убирает виджет схемы, когда пользователь уходит с экрана схемы
+    dp.callback_query.outer_middleware(CircuitWidgetCleanupMiddleware())
 
     try:
         await bot.delete_webhook(drop_pending_updates=True)

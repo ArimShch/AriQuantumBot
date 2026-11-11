@@ -4,8 +4,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from fluentogram import TranslatorRunner
 
 
-# Клавиатура для выбора кол-ва кубитов в схеме
-def builder_num_qubits_keyboard(max_qubits: int):
+# Клавиатура для выбора кол-ва кубитов в схеме (универсальный лимит 10)
+def builder_num_qubits_keyboard(max_qubits: int = 10):
     builder = InlineKeyboardBuilder()
 
     for i in range(1, max_qubits + 1):
@@ -14,10 +14,8 @@ def builder_num_qubits_keyboard(max_qubits: int):
             callback_data=f'create:num_qubits:{i}'
         )
     
-    if max_qubits <= 8:
-        builder.adjust(4)
-    else:
-        builder.adjust(5)
+    # По 5 кнопок в ряд для 10 кубитов
+    builder.adjust(5)
 
     return builder.as_markup()
 

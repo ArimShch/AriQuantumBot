@@ -16,4 +16,6 @@ class States(StatesGroup):
     choose_language = State()
     
     waiting_for_block_input = State()
-    waiting_for_broadcast_message = State()
+    waiting_for_broadcast_ru = State()
+    waiting_for_broadcast_en = State()
+    waiting_for_user_search = State()

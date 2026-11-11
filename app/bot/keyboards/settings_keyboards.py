@@ -34,11 +34,15 @@ def builder_settings_menu(i18n: TranslatorRunner) -> InlineKeyboardMarkup:
         callback_data="settings:simulation_shots"
     )
     builder.button(
+        text=i18n.settings_output_mode_button(),
+        callback_data="settings:output_mode"
+    )
+    builder.button(
         text=i18n.menu_button(),
         callback_data="menu"
     )
     
-    builder.adjust(2, 1)
+    builder.adjust(2, 1)  # как было: 1-й ряд — 2 кнопки, остальные по одной в ряд
     return builder.as_markup()
 
 
@@ -73,7 +77,6 @@ def builder_complexity_menu(
     """Меню выбора уровня сложности"""
     builder = InlineKeyboardBuilder()
     
-    # Сортируем по ID для правильного порядка
     sorted_levels = sorted(complexity_levels, key=lambda x: x.id)
 
     complexity_levels_en_ru = {
@@ -102,8 +105,9 @@ def builder_complexity_menu(
 
 def builder_simulation_shots(
         i18n: TranslatorRunner, 
-        user_shots: int, 
-):
+        user_shots: int | None, 
+) -> InlineKeyboardMarkup:
+    """Меню выбора количества запусков (shots)"""
     builder = InlineKeyboardBuilder()
     shots_values = [1, 10, 50, 100, 200, 
                     300, 500, 600, 800, 1000]
@@ -114,29 +118,65 @@ def builder_simulation_shots(
             callback_data=f"settings:simulation_shots:{shots}"
         )
     
-    builder.adjust(3, 4, 3)
+    # Кнопка "Спрашивать при запуске"
+    builder.button(
+        text=("✅ " if user_shots is None else "") + i18n.settings_ask_at_runtime(),
+        callback_data="settings:simulation_shots:ask"
+    )
+    
+    builder.adjust(4, 3, 3, 1)  # Последняя 1 для широкой кнопки выбора при запуске
     builder.row(InlineKeyboardButton(text=i18n.back_button(), callback_data="back:settings"), 
                 InlineKeyboardButton(text=i18n.menu_button(), callback_data="menu"))
 
     return builder.as_markup()
 
+
 def builder_backend_menu(
     backends: list[Backend], 
-    current_backend: int, 
+    current_backend: int | None, 
     i18n: TranslatorRunner
 ) -> InlineKeyboardMarkup:
     """Меню выбора бэкенда"""
     builder = InlineKeyboardBuilder()
     
     for backend in backends:
-        text = ("✅ " if backend.id == current_backend else "") + f"{backend.name} ({backend.max_qubits} {i18n.qubits()})" 
+        text = ("✅ " if backend.id == current_backend else "") + f"{backend.name}" 
         builder.button(
             text=text,
             callback_data=f"settings:backend:{backend.id}"
         )
     
+    # Кнопка "Спрашивать при запуске"
+    builder.button(
+        text=("✅ " if current_backend is None else "") + i18n.settings_ask_at_runtime(),
+        callback_data="settings:backend:ask"
+    )
+    
     builder.adjust(1)
     builder.row(InlineKeyboardButton(text=i18n.back_button(), callback_data="back:settings"), 
                 InlineKeyboardButton(text=i18n.menu_button(), callback_data="menu"))
     
+    return builder.as_markup()
+
+
+def builder_output_mode_menu(
+    current_mode: str,
+    i18n: TranslatorRunner
+) -> InlineKeyboardMarkup:
+    """Меню выбора формата вывода графиков и схем"""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text=("✅ " if current_mode == 'widget' else "") + i18n.settings_output_mode_widget(),
+        callback_data="settings:output_mode:widget"
+    )
+    builder.button(
+        text=("✅ " if current_mode == 'ascii' else "") + i18n.settings_output_mode_ascii(),
+        callback_data="settings:output_mode:ascii"
+    )
+
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(text=i18n.back_button(), callback_data="back:settings"),
+                InlineKeyboardButton(text=i18n.menu_button(), callback_data="menu"))
+
     return builder.as_markup()
